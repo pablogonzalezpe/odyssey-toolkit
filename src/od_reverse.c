@@ -795,6 +795,7 @@ static bool packet_allowed_by_specs(const uint8_t *pkt, size_t pkt_len,
     return allow_port_matches(proto, dst_port, allow_ports, allow_port_count);
 }
 
+#ifndef _WIN32
 static bool packet_return_allowed_by_specs(const uint8_t *pkt, size_t pkt_len,
                                            const char *const *allow_cidrs, size_t allow_cidr_count,
                                            const char *const *allow_ports, size_t allow_port_count) {
@@ -830,6 +831,7 @@ static bool packet_return_allowed_by_specs(const uint8_t *pkt, size_t pkt_len,
     }
     return allow_port_matches(proto, src_port, allow_ports, allow_port_count);
 }
+#endif /* !_WIN32 */
 
 static bool packet_dst_matches_cidrs(const uint8_t *pkt, size_t pkt_len,
                                      const char *const *allow_cidrs, size_t allow_cidr_count) {
@@ -3641,6 +3643,7 @@ typedef struct {
     bool killswitch_enabled;
 } tun_agent_runtime_state_t;
 
+#ifndef _WIN32
 static int tun_agent_runtime_init(tun_agent_runtime_state_t *state,
                                   const od_tun_agent_runtime_opts_t *tun_opts) {
     if (state == NULL) {
@@ -4040,6 +4043,7 @@ fail:
     tun_agent_runtime_free(&runtime_state);
     return -1;
 }
+#endif /* !_WIN32 */
 
 void od_reverse_set_tun_gateway_ctx(int tun_fd, const char *const *route_allow, size_t route_allow_count) {
     runtime_string_list_free(&g_tun_gateway_ctx.route_allow);
@@ -4059,6 +4063,7 @@ void od_reverse_clear_tun_gateway_ctx(void) {
     g_tun_gateway_ctx.tun_fd = -1;
 }
 
+#ifndef _WIN32
 int od_run_tun_agent(const endpoint_t *connect_ep, const char *token,
                      const od_tun_agent_runtime_opts_t *tun_opts,
                      int connect_timeout_ms, const od_knock_plan_t *knock_plan,
@@ -4159,6 +4164,18 @@ int od_run_tun_agent(const endpoint_t *connect_ep, const char *token,
         }
     }
 }
+#else /* _WIN32 */
+int od_run_tun_agent(const endpoint_t *connect_ep, const char *token,
+                     const od_tun_agent_runtime_opts_t *tun_opts,
+                     int connect_timeout_ms, const od_knock_plan_t *knock_plan,
+                     const od_tls_options_t *tls_opts,
+                     int heartbeat_timeout_ms, bool verbose) {
+    (void)connect_ep; (void)token; (void)tun_opts; (void)connect_timeout_ms;
+    (void)knock_plan; (void)tls_opts; (void)heartbeat_timeout_ms; (void)verbose;
+    od_log_error("tun-agent mode is not supported on Windows");
+    return -1;
+}
+#endif /* !_WIN32 */
 
 int od_run_reverse_client(const endpoint_t *connect_ep, const endpoint_t *allow_targets,
                           size_t allow_target_count, size_t max_streams,
