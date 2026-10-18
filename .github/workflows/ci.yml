@@ -1,0 +1,38 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc make pkg-config libssl-dev
+
+      - name: Build with OpenSSL
+        run: make
+
+      - name: Compile test probes
+        run: make test-probes
+
+      - name: Run smoke tests (non-TUN)
+        run: |
+          failed=0
+          for t in tests/smoke_d*.sh tests/smoke_f*.sh tests/smoke_g*.sh tests/smoke_h*.sh; do
+            echo "--- $(basename "$t") ---"
+            if ! bash "$t"; then
+              echo "FAIL: $t"
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+      - name: Build without OpenSSL
+        run: |
+          make clean
+          make CFLAGS="-O2 -Wall -Wextra -Wpedantic -Werror -std=c11 -Iinclude"

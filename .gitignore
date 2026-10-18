@@ -1,0 +1,36 @@
+# Build artifacts
+bin/
+build/
+*.o
+*.d
+*.exe
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Slides (generated)
+slides/
+
+# Local-only directories (distributed via release archive)
+lab/
+docs/
+portable/
+manual/
+
+# Secrets & crypto material
+secrets/
+*.pem
+*.key
+*.crt
+
+# Temporary files
+tmp/
+*.tmp

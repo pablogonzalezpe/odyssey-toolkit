@@ -1,0 +1,25 @@
+# Normalize line endings
+* text=auto eol=lf
+
+# Force LF on source and scripts
+*.c text eol=lf
+*.h text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+Makefile text eol=lf
+Dockerfile* text eol=lf
+
+# Force CRLF on Windows-only scripts
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# Binary files
+*.exe binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.gif binary
