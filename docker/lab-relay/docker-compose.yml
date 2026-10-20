@@ -1,0 +1,50 @@
+services:
+  destiny:
+    build:
+      context: .
+      dockerfile: Dockerfile.destiny
+    container_name: destiny
+    hostname: destiny
+    networks:
+      internal-net:
+        ipv4_address: 10.10.20.2
+
+  jumpbox:
+    build:
+      context: ../..
+      dockerfile: docker/lab-relay/Dockerfile.jumpbox
+    container_name: jumpbox
+    hostname: jumpbox
+    depends_on:
+      - destiny
+    networks:
+      pentest-net:
+        ipv4_address: 10.10.10.2
+      internal-net:
+        ipv4_address: 10.10.20.3
+
+  pentester:
+    build:
+      context: .
+      dockerfile: Dockerfile.pentester
+    container_name: pentester
+    hostname: pentester
+    depends_on:
+      - jumpbox
+    stdin_open: true
+    tty: true
+    networks:
+      pentest-net:
+        ipv4_address: 10.10.10.3
+
+networks:
+  pentest-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.10.0/24
+  internal-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.20.0/24

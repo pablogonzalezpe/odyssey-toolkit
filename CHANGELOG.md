@@ -42,3 +42,7 @@ First public release. Single-binary C pivoting toolkit with six operating modes.
 - Windows via MinGW cross-compile
 - CI with GitHub Actions build and non-TUN smoke tests
 - 23 smoke tests covering relay, SOCKS5, TLS, knock, admin, control, TUN, and gateway modes
+
+## Next
+
+- Docker Compose lab with multi-container demo (relay, reverse+TLS, SOCKS5)

@@ -1,0 +1,11 @@
+FROM alpine:3.20
+RUN apk add --no-cache gcc musl-dev make linux-headers
+COPY include/ /build/include/
+COPY src/ /build/src/
+COPY Makefile /build/
+WORKDIR /build
+RUN make CFLAGS="-O2 -Wall -Wextra -Wpedantic -std=c11 -Iinclude" && \
+    cp bin/odyssey /usr/local/bin/odyssey && \
+    rm -rf /build
+EXPOSE 8080
+CMD ["odyssey", "relay", "--listen", "0.0.0.0:8080", "--to", "10.10.20.2:8080"]

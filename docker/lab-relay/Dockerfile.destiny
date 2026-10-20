@@ -1,0 +1,6 @@
+FROM alpine:3.20
+RUN apk add --no-cache busybox-extras
+RUN mkdir -p /srv
+RUN echo "FLAG{odyssey_relay_works}" > /srv/flag.txt
+EXPOSE 8080
+CMD ["httpd", "-f", "-p", "8080", "-h", "/srv"]

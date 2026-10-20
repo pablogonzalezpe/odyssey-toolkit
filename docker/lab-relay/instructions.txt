@@ -1,0 +1,21 @@
+Odyssey Relay Lab
+=================
+
+Network layout:
+
+  pentester (10.10.10.3)  ---[pentest-net]---  jumpbox (10.10.10.2)  ---[internal-net]---  destiny (10.10.20.2)
+
+The pentester container can only reach jumpbox.
+The destiny container can only reach jumpbox.
+Jumpbox bridges both networks running Odyssey in relay mode.
+
+Destiny is serving a file on port 8080.
+Jumpbox relays port 8080 to destiny (10.10.20.2:8080).
+
+Try it:
+
+  curl http://10.10.10.2:8080/flag.txt
+
+Expected output:
+
+  FLAG{odyssey_relay_works}
