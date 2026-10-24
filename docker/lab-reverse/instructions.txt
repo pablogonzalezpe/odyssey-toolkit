@@ -1,0 +1,32 @@
+Odyssey Reverse Tunnel Lab
+==========================
+
+Network layout:
+
+  pentester (10.10.10.3)  ---[pentest-net]---  jumpbox (10.10.10.2)  ---[internal-net]---  destiny (10.10.20.2)
+
+Roles:
+
+  pentester  runs reverse-server (waits for the agent to call back)
+  jumpbox    runs reverse-client (connects back to pentester on port 9001)
+  destiny    HTTP server on port 8080 (only reachable from internal-net)
+
+The jumpbox initiates the control channel outbound to the pentester.
+The pentester never opens a connection to the jumpbox data port.
+The bind rule on the server maps 127.0.0.1:8080 to 10.10.20.2:8080
+through the tunnel.
+
+Try it:
+
+  curl http://127.0.0.1:8080/flag.txt
+
+Expected output:
+
+  FLAG{odyssey_reverse_works}
+
+Key difference from the relay lab:
+
+  In the relay lab, the pentester connects to jumpbox:8080 directly.
+  Here, the jumpbox calls back to the pentester. The pentester accesses
+  the tunneled service on its own localhost. This is firewall-friendly
+  because the compromised host only needs outbound connectivity.
