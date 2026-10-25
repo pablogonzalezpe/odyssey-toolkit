@@ -50,6 +50,7 @@ int od_set_nonblocking(socket_t fd);
 socket_t od_accept_with_peer(socket_t lfd, char *peer_host, size_t peer_host_sz, uint16_t *peer_port);
 
 socket_t od_open_listener(const endpoint_t *listen_ep);
+socket_t od_open_udp_socket(const endpoint_t *ep, bool do_bind);
 socket_t od_connect_to_target(const endpoint_t *target_ep, int timeout_ms);
 socket_t od_connect_to_target_ex(const endpoint_t *target_ep, int timeout_ms,
                                  char *reason_buf, size_t reason_buf_sz);

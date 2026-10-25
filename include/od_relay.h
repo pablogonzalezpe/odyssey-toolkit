@@ -10,5 +10,7 @@
 int od_relay_bidirectional(socket_t left_fd, socket_t right_fd, bool verbose);
 int od_run_relay(const endpoint_t *listen_ep, const endpoint_t *target_ep, int connect_timeout_ms,
                  const od_hardening_options_t *hardening_opts, bool verbose);
+int od_run_udp_relay(const endpoint_t *listen_ep, const endpoint_t *target_ep,
+                     int timeout_ms, const od_hardening_options_t *hardening_opts, bool verbose);
 
 #endif

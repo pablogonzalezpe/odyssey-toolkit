@@ -2,6 +2,17 @@
 
 All notable changes to Odyssey are documented in this file.
 
+## [0.2.0] - 2026-10-25
+
+### New feature
+- **UDP relay mode.** Userspace NAT table that maps each client address:port to a connected DGRAM socket, with poll-based forwarding and configurable session timeout. Flags: `--udp`, `--udp-timeout-ms` (default 30 000 ms). Hardening options (`--allow-source`, `--rate-limit-per-min`) apply per datagram. Incompatible with `--knock-seq` (port-knocking is TCP only)
+
+### Docker labs
+- UDP relay lab (`docker/lab-udp-relay`) forwarding DNS queries through a jumpbox to an internal dnsmasq server
+
+### Tests
+- 3 new smoke tests for UDP relay: basic echo, multiple clients, and source filtering (`tests/smoke_u1_udp_relay.sh`)
+
 ## [0.1.0] - 2026-10-18
 
 First public release. Single-binary C pivoting toolkit with six operating modes.
@@ -41,14 +52,13 @@ First public release. Single-binary C pivoting toolkit with six operating modes.
 - Linux with GCC + Make and auto-detected OpenSSL via pkg-config
 - Windows via MinGW cross-compile
 - CI with GitHub Actions build and non-TUN smoke tests
-- 23 smoke tests covering relay, SOCKS5, TLS, knock, admin, control, TUN, and gateway modes
+- 23 smoke tests covering relay, SOCKS5, TLS, knock, admin, control, TUN, and gateway modes (3 more added in v0.2.0)
+
+### Docker labs
+- Docker Compose relay lab (`docker/lab-relay`) with three Alpine containers and two isolated networks
+- Docker Compose reverse tunnel lab (`docker/lab-reverse`) demonstrating outbound control channel from jumpbox to pentester
 
 ## Next
 
 - Docker Compose lab for SOCKS5 mode
 - Docker Compose lab for reverse tunnel with TLS
-
-## Post-release additions
-
-- Docker Compose relay lab (`docker/lab-relay`) with three Alpine containers and two isolated networks
-- Docker Compose reverse tunnel lab (`docker/lab-reverse`) demonstrating outbound control channel from jumpbox to pentester

@@ -310,6 +310,63 @@ socket_t od_open_listener(const endpoint_t *listen_ep) {
     return sfd;
 }
 
+socket_t od_open_udp_socket(const endpoint_t *ep, bool do_bind) {
+    struct addrinfo hints;
+    struct addrinfo *result = NULL;
+    struct addrinfo *rp = NULL;
+    char port[16];
+    int yes = 1;
+    socket_t sfd = OD_SOCK_INVALID;
+    int gai_rc = 0;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    if (do_bind) {
+        hints.ai_flags = AI_PASSIVE;
+    }
+
+    snprintf(port, sizeof(port), "%u", (unsigned)ep->port);
+    gai_rc = getaddrinfo(ep->host, port, &hints, &result);
+    if (gai_rc != 0) {
+        od_log_error("getaddrinfo(udp): %s", gai_strerror(gai_rc));
+        return OD_SOCK_INVALID;
+    }
+
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (sfd == OD_SOCK_INVALID) {
+            continue;
+        }
+
+        if (do_bind) {
+            if (setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, (const char *)&yes, sizeof(yes)) != 0) {
+                od_socket_close(sfd);
+                sfd = OD_SOCK_INVALID;
+                continue;
+            }
+            if (bind(sfd, rp->ai_addr, (int)rp->ai_addrlen) == 0) {
+                break;
+            }
+            od_socket_close(sfd);
+            sfd = OD_SOCK_INVALID;
+        } else {
+            if (connect(sfd, rp->ai_addr, (int)rp->ai_addrlen) == 0) {
+                break;
+            }
+            od_socket_close(sfd);
+            sfd = OD_SOCK_INVALID;
+        }
+    }
+
+    freeaddrinfo(result);
+
+    if (sfd == OD_SOCK_INVALID) {
+        od_socket_log_error(do_bind ? "bind(udp)" : "connect(udp)");
+    }
+    return sfd;
+}
+
 socket_t od_connect_to_target_ex(const endpoint_t *target_ep, int timeout_ms,
                                  char *reason_buf, size_t reason_buf_sz) {
     struct addrinfo hints;

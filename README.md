@@ -7,13 +7,14 @@
 
 A lightweight, single-binary pivoting toolkit written in C for network administration, pentesting and red team operations.
 
-TCP relay, reverse tunneling with multiplexing, SOCKS5 proxy, TLS/mTLS transport, port-knocking, hot-reconfigurable binds, and a defensive L3 TUN gateway. All in one binary, no runtime dependencies.
+TCP and UDP relay, reverse tunneling with multiplexing, SOCKS5 proxy, TLS/mTLS transport, port-knocking, hot-reconfigurable binds, and a defensive L3 TUN gateway. All in one binary, no runtime dependencies.
 
 ## Features
 
 ### Core tunneling
 
-- **Local relay.** TCP port-forwarding (`--listen`/`--to`) with multi-client support (fork on Linux, threads on Windows).
+- **Local relay (TCP).** TCP port-forwarding (`--listen`/`--to`) with multi-client support (fork on Linux, threads on Windows).
+- **Local relay (UDP).** Userspace NAT table forwarding datagrams between clients and a target service (`--udp`). Configurable session timeout (`--udp-timeout-ms`). Useful for DNS, SNMP, syslog and other UDP protocols through a jumpbox.
 - **Reverse tunnel.** Outbound control channel with token authentication, heartbeat, and automatic reconnection (exponential backoff + jitter).
 - **Stream multiplexing.** Multiple concurrent data streams over a single control channel.
 - **Multiple bind rules.** Forward several `LOCAL:REMOTE` pairs through one tunnel.
@@ -82,7 +83,7 @@ A self-contained build kit for deploying on minimal Linux hosts (x64 and x86) is
 
 ## Quick start
 
-### 1. Local relay
+### 1. Local TCP relay
 
 Forward local port 8080 to a remote service:
 
@@ -90,7 +91,15 @@ Forward local port 8080 to a remote service:
 ./bin/odyssey relay --listen 0.0.0.0:8080 --to 10.10.10.20:3389
 ```
 
-### 2. Reverse tunnel
+### 2. Local UDP relay
+
+Forward DNS queries through a jumpbox to an internal resolver:
+
+```bash
+./bin/odyssey relay --listen 0.0.0.0:53 --to 198.51.100.2:53 --udp --udp-timeout-ms 10000
+```
+
+### 3. Reverse tunnel
 
 Prepare a shared token (minimum 16 characters):
 
@@ -122,7 +131,7 @@ Client side (target network):
 
 Now `curl http://127.0.0.1:10080` on the operator host reaches `10.10.20.15:80` through the target network.
 
-### 3. SOCKS5 dynamic forwarding
+### 4. SOCKS5 dynamic forwarding
 
 Server side:
 
@@ -154,7 +163,7 @@ Use it:
 curl --socks5-hostname 127.0.0.1:1080 --proxy-user pivot:YOUR_PASS http://10.10.20.15
 ```
 
-### 4. Defensive TUN gateway (Linux, requires CAP_NET_ADMIN)
+### 5. Defensive TUN gateway (Linux, requires CAP_NET_ADMIN)
 
 Gateway side (operator):
 

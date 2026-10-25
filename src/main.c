@@ -24,7 +24,7 @@
 #include "od_tun_dev.h"
 #include "od_types.h"
 
-#define ODYSSEY_VERSION "0.1.0"
+#define ODYSSEY_VERSION "0.2.0"
 
 #define DEFAULT_CONNECT_TIMEOUT_MS 5000
 #define DEFAULT_HEARTBEAT_MS 5000
@@ -38,8 +38,8 @@ static void print_version(void) {
 static void print_usage(const char *prog) {
     fprintf(stderr,
             "Usage:\n"
-            "  %s relay --listen IP:PORT --to IP:PORT [--connect-timeout-ms N]\n"
-            "      [--allow-source IP|CIDR]... [--rate-limit-per-min N]\n"
+            "  %s relay --listen IP:PORT --to IP:PORT [--udp] [--udp-timeout-ms N]\n"
+            "      [--connect-timeout-ms N] [--allow-source IP|CIDR]... [--rate-limit-per-min N]\n"
             "      [--knock-seq P1,P2,...] [--knock-timeout-ms N] [--knock-open-ms N]\n"
             "      [--log-format text|json] [--verbose]\n"
             "  %s reverse-server --listen-control IP:PORT --token-file PATH\n"
@@ -643,7 +643,9 @@ static int run_relay_cmd(int argc, char **argv) {
     bool have_listen = false;
     bool have_to = false;
     bool verbose = false;
+    bool use_udp = false;
     int connect_timeout_ms = DEFAULT_CONNECT_TIMEOUT_MS;
+    int udp_timeout_ms = 30000;
     int i = 0;
 
     memset(&listen_ep, 0, sizeof(listen_ep));
@@ -734,6 +736,20 @@ static int run_relay_cmd(int argc, char **argv) {
             i++;
             continue;
         }
+        if (strcmp(argv[i], "--udp") == 0) {
+            use_udp = true;
+            continue;
+        }
+        if (strcmp(argv[i], "--udp-timeout-ms") == 0 && i + 1 < argc) {
+            if (parse_u32_arg(argv[i + 1], 1000, 600000, &udp_timeout_ms) != 0) {
+                fprintf(stderr, "Invalid --udp-timeout-ms value: %s (expected 1000..600000)\n",
+                        argv[i + 1]);
+                cli_hardening_free(&hard_cli);
+                return 1;
+            }
+            i++;
+            continue;
+        }
         if (strcmp(argv[i], "--log-format") == 0 && i + 1 < argc) {
             if (parse_log_format_arg(argv[i + 1], &log_format) != 0) {
                 fprintf(stderr, "Invalid --log-format value: %s (expected text|json)\n", argv[i + 1]);
@@ -753,6 +769,11 @@ static int run_relay_cmd(int argc, char **argv) {
         cli_hardening_free(&hard_cli);
         return 1;
     }
+    if (use_udp && hard_cli.knock_count > 0) {
+        fprintf(stderr, "--knock-seq is not supported with --udp\n");
+        cli_hardening_free(&hard_cli);
+        return 1;
+    }
     if (hard_cli.knock_count > 0 && hard_cli.allow_source_count == 0) {
         fprintf(stderr, "--knock-seq requires at least one --allow-source\n");
         cli_hardening_free(&hard_cli);
@@ -761,7 +782,11 @@ static int run_relay_cmd(int argc, char **argv) {
 
     fill_hardening_options(&hard_cli, verbose, &hard_opts);
     od_log_set_format(log_format);
-    i = od_run_relay(&listen_ep, &target_ep, connect_timeout_ms, &hard_opts, verbose);
+    if (use_udp) {
+        i = od_run_udp_relay(&listen_ep, &target_ep, udp_timeout_ms, &hard_opts, verbose);
+    } else {
+        i = od_run_relay(&listen_ep, &target_ep, connect_timeout_ms, &hard_opts, verbose);
+    }
     cli_hardening_free(&hard_cli);
     return i;
 }

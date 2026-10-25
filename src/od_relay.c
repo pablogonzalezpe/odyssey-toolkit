@@ -7,7 +7,10 @@
 #include <string.h>
 
 #ifndef _WIN32
+#include <arpa/inet.h>
+#include <netdb.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -472,6 +475,256 @@ int od_run_relay(const endpoint_t *listen_ep, const endpoint_t *target_ep, int c
         }
     }
     free(knock_listeners);
+    od_hardening_free(hard_state);
+    return ret;
+}
+
+/* ── UDP relay ─────────────────────────────────────────────────── */
+
+#define UDP_MAX_CLIENTS 256
+#define UDP_BUF_SIZE    65535
+#define UDP_POLL_MS     500
+
+typedef struct {
+    struct sockaddr_in client_addr;
+    socket_t remote_fd;
+    uint64_t last_active_ms;
+    bool in_use;
+} udp_nat_entry_t;
+
+static uint64_t udp_now_ms(void) {
+#ifdef _WIN32
+    return (uint64_t)GetTickCount64();
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
+#endif
+}
+
+static int udp_nat_find(udp_nat_entry_t *table, size_t cap,
+                        const struct sockaddr_in *addr) {
+    size_t i;
+    for (i = 0; i < cap; i++) {
+        if (table[i].in_use &&
+            table[i].client_addr.sin_addr.s_addr == addr->sin_addr.s_addr &&
+            table[i].client_addr.sin_port == addr->sin_port) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static int udp_nat_alloc(udp_nat_entry_t *table, size_t cap) {
+    size_t i;
+    for (i = 0; i < cap; i++) {
+        if (!table[i].in_use) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static void udp_nat_expire(udp_nat_entry_t *table, size_t cap, uint64_t timeout_ms) {
+    size_t i;
+    uint64_t now = udp_now_ms();
+    for (i = 0; i < cap; i++) {
+        if (table[i].in_use && (now - table[i].last_active_ms) > timeout_ms) {
+            od_socket_close(table[i].remote_fd);
+            table[i].in_use = false;
+        }
+    }
+}
+
+static size_t udp_nat_active(const udp_nat_entry_t *table, size_t cap) {
+    size_t count = 0;
+    size_t i;
+    for (i = 0; i < cap; i++) {
+        if (table[i].in_use) {
+            count++;
+        }
+    }
+    return count;
+}
+
+int od_run_udp_relay(const endpoint_t *listen_ep, const endpoint_t *target_ep,
+                     int timeout_ms, const od_hardening_options_t *hardening_opts,
+                     bool verbose) {
+    socket_t lfd = OD_SOCK_INVALID;
+    od_hardening_state_t *hard_state = NULL;
+    udp_nat_entry_t nat_table[UDP_MAX_CLIENTS];
+    uint8_t buf[UDP_BUF_SIZE];
+    char hard_err[160];
+    int ret = 0;
+
+    memset(nat_table, 0, sizeof(nat_table));
+    memset(hard_err, 0, sizeof(hard_err));
+
+    if (od_hardening_init(&hard_state, hardening_opts, hard_err, sizeof(hard_err)) != 0) {
+        od_log_error("hardening init failed: %s", hard_err);
+        return 1;
+    }
+
+    lfd = od_open_udp_socket(listen_ep, true);
+    if (lfd == OD_SOCK_INVALID) {
+        od_hardening_free(hard_state);
+        return 1;
+    }
+
+    if (od_set_nonblocking(lfd) < 0) {
+        od_socket_log_error("set_nonblocking(udp listener)");
+        od_socket_close(lfd);
+        od_hardening_free(hard_state);
+        return 1;
+    }
+
+    od_log_info("UDP relay listening on %s:%u", listen_ep->host, (unsigned)listen_ep->port);
+    od_log_info("UDP relay forwarding to %s:%u (timeout %dms)",
+                target_ep->host, (unsigned)target_ep->port, timeout_ms);
+
+    for (;;) {
+        size_t active = udp_nat_active(nat_table, UDP_MAX_CLIENTS);
+        size_t nfds = 1 + active;
+        pollfd_t *fds = (pollfd_t *)calloc(nfds, sizeof(*fds));
+        int *fd_to_nat = (int *)calloc(nfds, sizeof(*fd_to_nat));
+        size_t slot = 1;
+        size_t i;
+        int rc;
+
+        if (fds == NULL || fd_to_nat == NULL) {
+            free(fds);
+            free(fd_to_nat);
+            od_log_error("out of memory");
+            ret = 1;
+            break;
+        }
+
+        fds[0].fd = lfd;
+        fds[0].events = OD_SOCK_POLLIN;
+        fd_to_nat[0] = -1;
+
+        for (i = 0; i < UDP_MAX_CLIENTS; i++) {
+            if (nat_table[i].in_use) {
+                fds[slot].fd = nat_table[i].remote_fd;
+                fds[slot].events = OD_SOCK_POLLIN;
+                fd_to_nat[slot] = (int)i;
+                slot++;
+            }
+        }
+
+        rc = od_socket_poll(fds, (unsigned long)nfds, UDP_POLL_MS);
+        if (rc < 0) {
+            free(fds);
+            free(fd_to_nat);
+            if (od_socket_error_is_retryable(od_socket_last_error())) {
+                continue;
+            }
+            od_socket_log_error("poll(udp relay)");
+            ret = 1;
+            break;
+        }
+
+        if (rc == 0) {
+            free(fds);
+            free(fd_to_nat);
+            udp_nat_expire(nat_table, UDP_MAX_CLIENTS, (uint64_t)timeout_ms);
+            continue;
+        }
+
+        if (fds[0].revents & OD_SOCK_POLLIN) {
+            struct sockaddr_in from_addr;
+            socklen_t from_len = sizeof(from_addr);
+            int n = recvfrom(lfd, (char *)buf, sizeof(buf), 0,
+                             (struct sockaddr *)&from_addr, &from_len);
+            if (n > 0) {
+                char peer_ip[NI_MAXHOST];
+                int idx;
+                memset(peer_ip, 0, sizeof(peer_ip));
+                getnameinfo((struct sockaddr *)&from_addr, from_len,
+                            peer_ip, sizeof(peer_ip), NULL, 0, NI_NUMERICHOST);
+
+                {
+                    char deny_reason[96];
+                    memset(deny_reason, 0, sizeof(deny_reason));
+                    if (!od_hardening_allow_connection(hard_state, peer_ip,
+                                                      deny_reason, sizeof(deny_reason))) {
+                        if (verbose) {
+                            od_log_warn("udp relay rejected source=%s reason=%s",
+                                        peer_ip, deny_reason);
+                        }
+                        goto after_listener;
+                    }
+                }
+
+                idx = udp_nat_find(nat_table, UDP_MAX_CLIENTS, &from_addr);
+                if (idx < 0) {
+                    socket_t rfd = od_open_udp_socket(target_ep, false);
+                    if (rfd == OD_SOCK_INVALID) {
+                        od_log_warn("udp relay: cannot open socket to target for %s", peer_ip);
+                        goto after_listener;
+                    }
+                    if (od_set_nonblocking(rfd) < 0) {
+                        od_socket_close(rfd);
+                        goto after_listener;
+                    }
+                    idx = udp_nat_alloc(nat_table, UDP_MAX_CLIENTS);
+                    if (idx < 0) {
+                        udp_nat_expire(nat_table, UDP_MAX_CLIENTS, (uint64_t)timeout_ms);
+                        idx = udp_nat_alloc(nat_table, UDP_MAX_CLIENTS);
+                    }
+                    if (idx < 0) {
+                        od_log_warn("udp relay: NAT table full, dropping from %s", peer_ip);
+                        od_socket_close(rfd);
+                        goto after_listener;
+                    }
+                    nat_table[idx].client_addr = from_addr;
+                    nat_table[idx].remote_fd = rfd;
+                    nat_table[idx].in_use = true;
+                    if (verbose) {
+                        od_log_info("udp relay: new session slot=%d from=%s:%u",
+                                    idx, peer_ip, (unsigned)ntohs(from_addr.sin_port));
+                    }
+                }
+                nat_table[idx].last_active_ms = udp_now_ms();
+                send(nat_table[idx].remote_fd, (const char *)buf, n, 0);
+            }
+        }
+after_listener:
+
+        for (slot = 1; slot < nfds; slot++) {
+            if (!(fds[slot].revents & OD_SOCK_POLLIN)) {
+                continue;
+            }
+            {
+                int nat_idx = fd_to_nat[slot];
+                int n;
+                if (nat_idx < 0 || !nat_table[nat_idx].in_use) {
+                    continue;
+                }
+                n = recv(nat_table[nat_idx].remote_fd, (char *)buf, sizeof(buf), 0);
+                if (n > 0) {
+                    nat_table[nat_idx].last_active_ms = udp_now_ms();
+                    sendto(lfd, (const char *)buf, n, 0,
+                           (struct sockaddr *)&nat_table[nat_idx].client_addr,
+                           sizeof(nat_table[nat_idx].client_addr));
+                }
+            }
+        }
+
+        free(fds);
+        free(fd_to_nat);
+        udp_nat_expire(nat_table, UDP_MAX_CLIENTS, (uint64_t)timeout_ms);
+    }
+
+    {
+        size_t i;
+        for (i = 0; i < UDP_MAX_CLIENTS; i++) {
+            if (nat_table[i].in_use) {
+                od_socket_close(nat_table[i].remote_fd);
+            }
+        }
+    }
+    od_socket_close(lfd);
     od_hardening_free(hard_state);
     return ret;
 }
