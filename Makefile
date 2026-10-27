@@ -26,7 +26,7 @@ endif
 
 TARGET := $(BIN_DIR)/odyssey$(EXE_EXT)
 
-.PHONY: all clean test test-probes test-smoke
+.PHONY: all clean test test-probes test-smoke stager-payloads
 
 all: $(TARGET)
 
@@ -50,6 +50,12 @@ test-smoke: $(TARGET)
 		echo "[smoke] $$name"; \
 		bash "$$t" || exit 1; \
 	done
+
+stager-payloads:
+	docker run --rm -v $(CURDIR)/stager_payload:/src alpine:3.20 sh -c \
+		"apk add --no-cache gcc musl-dev > /dev/null 2>&1 && \
+		 gcc -Os -s -static -o /src/stager_linux_x64 /src/stager_linux.c"
+	cd stager_payload && xxd -i stager_linux_x64 > ../include/od_stager_payload_linux_x64.h
 
 clean:
 	rm -rf $(BIN_DIR)

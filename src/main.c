@@ -19,12 +19,13 @@
 #include "od_gateway.h"
 #include "od_log.h"
 #include "od_socket.h"
+#include "od_stager.h"
 #include "od_tls.h"
 #include "od_tun.h"
 #include "od_tun_dev.h"
 #include "od_types.h"
 
-#define ODYSSEY_VERSION "0.2.0"
+#define ODYSSEY_VERSION "0.3.0"
 
 #define DEFAULT_CONNECT_TIMEOUT_MS 5000
 #define DEFAULT_HEARTBEAT_MS 5000
@@ -98,6 +99,12 @@ static void print_usage(const char *prog) {
             "           policy-allow-cidr-add CIDR | policy-allow-cidr-del CIDR |\n"
             "           policy-allow-port-add tcp:PORT|udp:PORT | policy-allow-port-del tcp:PORT|udp:PORT |\n"
             "           killswitch on|off | snapshot\n\n"
+            "  %s stager-server --listen IP:PORT --binary PATH\n"
+            "      [--token TOKEN] [--args ARGS] [--no-auth] [--single-use]\n"
+            "      [--log-format text|json] [--verbose]\n"
+            "  %s stager --os linux|windows --format oneliner --connect IP:PORT\n"
+            "      [--run-args ARGS]\n"
+            "  %s stager --os linux|windows --format base64 --connect IP:PORT --token TOKEN\n\n"
             "  %s --version\n\n"
             "Notes:\n"
             "  - IPv4/hostname only in this MVP endpoint format.\n"
@@ -106,7 +113,7 @@ static void print_usage(const char *prog) {
             "  - Default max streams: %d.\n"
             "  - Default reverse TLS mode: required.\n\n"
             "Odyssey %s — https://github.com/pablogonzalezpe/odyssey\n",
-            prog, prog, prog, prog, prog, prog, prog, DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_HEARTBEAT_MS,
+            prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_HEARTBEAT_MS,
             DEFAULT_HEARTBEAT_TIMEOUT_MS, DEFAULT_MAX_STREAMS, ODYSSEY_VERSION);
 }
 
@@ -2482,6 +2489,165 @@ cleanup:
     return rc;
 }
 
+/* ── stager-server ────────────────────────────────────────────── */
+
+static int run_stager_server_cmd(int argc, char **argv) {
+    endpoint_t listen_ep;
+    bool have_listen = false;
+    char binary_path[1024] = {0};
+    bool have_binary = false;
+    char token[OD_STAGER_MAX_TOKEN + 1] = {0};
+    bool have_token = false;
+    char args_str[OD_STAGER_MAX_ARGS + 1] = {0};
+    bool no_auth = false;
+    bool single_use = false;
+    bool verbose = false;
+    od_log_format_t log_format = OD_LOG_FORMAT_TEXT;
+    int i;
+
+    memset(&listen_ep, 0, sizeof(listen_ep));
+
+    for (i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--listen") == 0 && i + 1 < argc) {
+            if (parse_endpoint(argv[i + 1], &listen_ep) != 0) {
+                fprintf(stderr, "Invalid --listen: %s\n", argv[i + 1]);
+                return 1;
+            }
+            have_listen = true;
+            i++;
+            continue;
+        }
+        if (strcmp(argv[i], "--binary") == 0 && i + 1 < argc) {
+            strncpy(binary_path, argv[i + 1], sizeof(binary_path) - 1);
+            have_binary = true;
+            i++;
+            continue;
+        }
+        if (strcmp(argv[i], "--token") == 0 && i + 1 < argc) {
+            strncpy(token, argv[i + 1], sizeof(token) - 1);
+            have_token = true;
+            i++;
+            continue;
+        }
+        if (strcmp(argv[i], "--args") == 0 && i + 1 < argc) {
+            strncpy(args_str, argv[i + 1], sizeof(args_str) - 1);
+            i++;
+            continue;
+        }
+        if (strcmp(argv[i], "--no-auth") == 0) { no_auth = true; continue; }
+        if (strcmp(argv[i], "--single-use") == 0) { single_use = true; continue; }
+        if (strcmp(argv[i], "--verbose") == 0) { verbose = true; continue; }
+        if (strcmp(argv[i], "--log-format") == 0 && i + 1 < argc) {
+            if (parse_log_format_arg(argv[i + 1], &log_format) != 0) {
+                fprintf(stderr, "Invalid --log-format: %s\n", argv[i + 1]);
+                return 1;
+            }
+            i++;
+            continue;
+        }
+        fprintf(stderr, "Unknown option: %s\n", argv[i]);
+        return 1;
+    }
+
+    if (!have_listen || !have_binary) {
+        fprintf(stderr, "stager-server requires --listen and --binary\n");
+        return 1;
+    }
+    if (!no_auth && !have_token) {
+        fprintf(stderr, "--token required (or use --no-auth)\n");
+        return 1;
+    }
+
+    od_log_set_format(log_format);
+    return od_run_stager_server(&listen_ep, binary_path,
+                                have_token ? token : NULL,
+                                args_str[0] ? args_str : NULL,
+                                single_use, verbose);
+}
+
+/* ── stager (generate) ───────────────────────────────────────── */
+
+static int run_stager_cmd(int argc, char **argv) {
+    char connect_host[256] = {0};
+    uint16_t connect_port = 0;
+    bool have_connect = false;
+    char token[OD_STAGER_MAX_TOKEN + 1] = {0};
+    bool have_token = false;
+    char os_name[16] = {0};
+    bool have_os = false;
+    char format[16] = {0};
+    bool have_format = false;
+    char run_args[OD_STAGER_MAX_ARGS + 1] = {0};
+    int i;
+
+    for (i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--connect") == 0 && i + 1 < argc) {
+            endpoint_t tmp;
+            if (parse_endpoint(argv[i + 1], &tmp) != 0) {
+                fprintf(stderr, "Invalid --connect: %s\n", argv[i + 1]);
+                return 1;
+            }
+            snprintf(connect_host, sizeof(connect_host), "%s", tmp.host);
+            connect_port = tmp.port;
+            have_connect = true;
+            i++;
+            continue;
+        }
+        if (strcmp(argv[i], "--token") == 0 && i + 1 < argc) {
+            snprintf(token, sizeof(token), "%s", argv[i + 1]);
+            have_token = true;
+            i++;
+            continue;
+        }
+        if (strcmp(argv[i], "--os") == 0 && i + 1 < argc) {
+            if (strcmp(argv[i + 1], "linux") != 0 && strcmp(argv[i + 1], "windows") != 0) {
+                fprintf(stderr, "--os must be 'linux' or 'windows'\n");
+                return 1;
+            }
+            snprintf(os_name, sizeof(os_name), "%s", argv[i + 1]);
+            have_os = true;
+            i++;
+            continue;
+        }
+        if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
+            if (strcmp(argv[i + 1], "oneliner") != 0 &&
+                strcmp(argv[i + 1], "base64") != 0) {
+                fprintf(stderr, "--format must be 'oneliner' or 'base64'\n");
+                return 1;
+            }
+            snprintf(format, sizeof(format), "%s", argv[i + 1]);
+            have_format = true;
+            i++;
+            continue;
+        }
+        if (strcmp(argv[i], "--run-args") == 0 && i + 1 < argc) {
+            snprintf(run_args, sizeof(run_args), "%s", argv[i + 1]);
+            i++;
+            continue;
+        }
+        fprintf(stderr, "Unknown option: %s\n", argv[i]);
+        return 1;
+    }
+
+    if (!have_os || !have_format) {
+        fprintf(stderr, "stager requires --os and --format\n");
+        return 1;
+    }
+    if (!have_connect) {
+        fprintf(stderr, "--connect required for stager generate\n");
+        return 1;
+    }
+    if (strcmp(format, "base64") == 0 && !have_token) {
+        fprintf(stderr, "--token required for format 'base64'\n");
+        return 1;
+    }
+
+    return od_run_stager_generate(connect_host, connect_port,
+                                  have_token ? token : NULL,
+                                  os_name, format,
+                                  run_args[0] ? run_args : NULL);
+}
+
 int main(int argc, char **argv) {
     int rc = 1;
 
@@ -2530,6 +2696,10 @@ int main(int argc, char **argv) {
         rc = run_gateway_cmd(argc, argv);
     } else if (strcmp(argv[1], "reverse-client") == 0) {
         rc = run_reverse_client_cmd(argc, argv);
+    } else if (strcmp(argv[1], "stager-server") == 0) {
+        rc = run_stager_server_cmd(argc, argv);
+    } else if (strcmp(argv[1], "stager") == 0) {
+        rc = run_stager_cmd(argc, argv);
     } else {
         print_usage(argv[0]);
         od_tls_global_cleanup();

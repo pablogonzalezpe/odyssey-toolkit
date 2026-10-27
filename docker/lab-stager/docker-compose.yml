@@ -1,0 +1,52 @@
+services:
+  destiny:
+    build:
+      context: .
+      dockerfile: Dockerfile.destiny
+    container_name: destiny-stg
+    hostname: destiny
+    networks:
+      internal-net:
+        ipv4_address: 10.10.20.2
+
+  jumpbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.jumpbox
+    container_name: jumpbox-stg
+    hostname: jumpbox
+    depends_on:
+      - destiny
+    stdin_open: true
+    tty: true
+    networks:
+      pentest-net:
+        ipv4_address: 10.10.10.2
+      internal-net:
+        ipv4_address: 10.10.20.3
+
+  pentester:
+    build:
+      context: ../..
+      dockerfile: docker/lab-stager/Dockerfile.pentester
+    container_name: pentester-stg
+    hostname: pentester
+    depends_on:
+      - jumpbox
+    stdin_open: true
+    tty: true
+    networks:
+      pentest-net:
+        ipv4_address: 10.10.10.3
+
+networks:
+  pentest-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.10.0/24
+  internal-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.20.0/24

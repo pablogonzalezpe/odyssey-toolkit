@@ -2,6 +2,21 @@
 
 All notable changes to Odyssey are documented in this file.
 
+## [0.3.0] - 2026-10-26
+
+### New feature
+- **Stager server and payload generator.** Two new subcommands for deploying Odyssey on compromised hosts with no tools installed:
+  - `odyssey stager-server` serves the Odyssey binary over a raw TCP socket. Supports token authentication (4-byte magic + token handshake) and no-auth mode (raw byte stream). Constant-time token comparison. Single-use mode (`--single-use`) closes the listener after the first successful delivery
+  - `odyssey stager --format oneliner` generates ready-to-paste one-liners that download and execute Odyssey. Linux one-liners use bash `/dev/tcp` (~85 chars). Windows one-liners use PowerShell `TcpClient` (~285 chars). Optional `--run-args` appends arguments so the deployed binary starts working immediately
+  - `odyssey stager --format base64` generates a base64-encoded mini-stager (~18 KB pre-compiled, embedded in Odyssey) patched at generate time with the stager-server address and token. Output is ~13 lines of chunked echo commands fitting terminal paste buffers (4096 byte limit). The mini-stager connects to the stager-server, authenticates with a token, downloads the full Odyssey binary, and executes it in memory via `memfd_create` (Linux >= 3.17) or falls back to temp file execution
+
+### Docker labs
+- Stager lab (`docker/lab-stager`) with pentester/jumpbox/destiny topology demonstrating one-liner and base64 chunked deployment with relay pivot
+
+### Tests
+- 3 smoke tests for stager-server: no-auth serve, token auth serve, bad token rejection (`tests/smoke_s1_stager_server.sh`)
+- 3 smoke tests for payload generation: Linux/Windows oneliner format, Linux base64 mini-stager with chunk-size validation (`tests/smoke_s2_stager_generate.sh`)
+
 ## [0.2.0] - 2026-10-25
 
 ### New feature

