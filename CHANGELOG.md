@@ -9,13 +9,20 @@ All notable changes to Odyssey are documented in this file.
   - `odyssey stager-server` serves the Odyssey binary over a raw TCP socket. Supports token authentication (4-byte magic + token handshake) and no-auth mode (raw byte stream). Constant-time token comparison. Single-use mode (`--single-use`) closes the listener after the first successful delivery
   - `odyssey stager --format oneliner` generates ready-to-paste one-liners that download and execute Odyssey. Linux one-liners use bash `/dev/tcp` (~85 chars). Windows one-liners use PowerShell `TcpClient` (~285 chars). Optional `--run-args` appends arguments so the deployed binary starts working immediately
   - `odyssey stager --format base64` generates a base64-encoded mini-stager (~18 KB pre-compiled, embedded in Odyssey) patched at generate time with the stager-server address and token. Output is ~13 lines of chunked echo commands fitting terminal paste buffers (4096 byte limit). The mini-stager connects to the stager-server, authenticates with a token, downloads the full Odyssey binary, and executes it in memory via `memfd_create` (Linux >= 3.17) or falls back to temp file execution
+  - `odyssey stager --format stub` generates a one-line base64 payload containing an 887-byte ELF shellcode stub. The stub connects to the stager-server, downloads Odyssey, and executes via `memfd_create` with `/tmp` fallback. Disk touch: brief write to `/tmp/.s`
+  - `odyssey stager --format stub-shm` same stub but writes to `/dev/shm/.s` (RAM-backed tmpfs). No persistent disk touch. Requires exec-enabled `/dev/shm` (noexec is default on Docker and many hardened hosts)
+  - `odyssey stager --format stub-memfd` wraps the stub in a perl one-liner that decodes it to `memfd_create` and executes from memory. Zero disk touch. Requires perl
+  - `odyssey stager --format perl-memfd` generates a pure perl one-liner (~200 chars) that connects, downloads Odyssey, and executes via `memfd_create`. No compiled stub needed. Shortest fileless format. Requires perl
+  - `odyssey stager --format list` prints a table of all 7 delivery formats with metadata (line count, size, disk impact, auth mode, dependencies). Filterable with `--os`
+  - All formats now accept `--run-args` to pass arguments to the deployed binary (e.g. `--run-args "relay --listen 0.0.0.0:8080 --to 10.10.10.20:80"`). Stub formats patch the arguments directly into the shellcode (PATCH_ARGS buffer, null-separated, up to 254 bytes), preserving the compact ELF and requiring no bash or perl. The base64 mini-stager forwards command-line arguments to the final `execve`, with priority over server-sent `--args`
 
 ### Docker labs
 - Stager lab (`docker/lab-stager`) with pentester/jumpbox/destiny topology demonstrating one-liner and base64 chunked deployment with relay pivot
+- Stager formats lab (`docker/lab-stager-formats`) with 4 containers testing all 7 delivery methods: pentester, target-full (bash+perl), target-minimal (busybox), target-shm (exec-enabled `/dev/shm`)
 
 ### Tests
 - 3 smoke tests for stager-server: no-auth serve, token auth serve, bad token rejection (`tests/smoke_s1_stager_server.sh`)
-- 3 smoke tests for payload generation: Linux/Windows oneliner format, Linux base64 mini-stager with chunk-size validation (`tests/smoke_s2_stager_generate.sh`)
+- 13 smoke tests for payload generation: format list, OS-filtered list, Linux/Windows oneliner, base64 mini-stager, stub disk, stub-memfd, perl-memfd, plus `--run-args` variants for stub, stub-shm, stub-memfd, perl-memfd, and base64 (`tests/smoke_s2_stager_generate.sh`)
 
 ## [0.2.0] - 2026-10-25
 

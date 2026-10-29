@@ -24,4 +24,6 @@ int od_run_stager_generate(const char *connect_host, uint16_t connect_port,
                            const char *format,
                            const char *run_args);
 
+char *od_stager_base64_encode(const uint8_t *data, size_t len, size_t *out_len);
+
 #endif

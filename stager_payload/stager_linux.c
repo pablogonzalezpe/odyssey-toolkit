@@ -123,7 +123,6 @@ static void file_exec(const void *bin, size_t bin_len,
 }
 
 int main(int argc, char **argv, char **envp) {
-    (void)argc; (void)argv;
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) err_exit("socket");
@@ -189,20 +188,29 @@ int main(int argc, char **argv, char **envp) {
         if (args_buf[i] == '\0') arg_count++;
     }
 
-    char **exec_argv = (char **)malloc((arg_count + 2) * sizeof(char *));
-    if (!exec_argv) err_exit("malloc argv");
+    char **exec_argv;
 
-    exec_argv[0] = (char *)"odyssey";
-    int idx = 1;
-    if (args_len > 0) {
-        exec_argv[idx++] = args_buf;
-        for (uint32_t i = 0; i < args_len - 1; i++) {
-            if (args_buf[i] == '\0') {
-                exec_argv[idx++] = &args_buf[i + 1];
+    if (argc > 1) {
+        exec_argv = (char **)malloc(((size_t)argc + 1) * sizeof(char *));
+        if (!exec_argv) err_exit("malloc argv");
+        exec_argv[0] = (char *)"odyssey";
+        for (int i = 1; i < argc; i++) exec_argv[i] = argv[i];
+        exec_argv[argc] = NULL;
+    } else {
+        exec_argv = (char **)malloc((arg_count + 2) * sizeof(char *));
+        if (!exec_argv) err_exit("malloc argv");
+        exec_argv[0] = (char *)"odyssey";
+        int idx = 1;
+        if (args_len > 0) {
+            exec_argv[idx++] = args_buf;
+            for (uint32_t i = 0; i < args_len - 1; i++) {
+                if (args_buf[i] == '\0') {
+                    exec_argv[idx++] = &args_buf[i + 1];
+                }
             }
         }
+        exec_argv[idx] = NULL;
     }
-    exec_argv[idx] = NULL;
 
     try_memfd_exec(bin, bin_len, exec_argv, envp);
     file_exec(bin, bin_len, exec_argv, envp);

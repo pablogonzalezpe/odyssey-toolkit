@@ -1,0 +1,54 @@
+services:
+  pentester:
+    build:
+      context: ../..
+      dockerfile: docker/lab-stager-formats/Dockerfile.pentester
+    container_name: sf-pentester
+    hostname: pentester
+    networks:
+      dmz:
+        ipv4_address: 10.30.0.2
+
+  target-full:
+    build:
+      context: .
+      dockerfile: Dockerfile.target-full
+    container_name: sf-target-full
+    hostname: target-full
+    stdin_open: true
+    tty: true
+    networks:
+      dmz:
+        ipv4_address: 10.30.0.3
+
+  target-minimal:
+    image: alpine:3.20
+    container_name: sf-target-minimal
+    hostname: target-minimal
+    stdin_open: true
+    tty: true
+    command: sh
+    networks:
+      dmz:
+        ipv4_address: 10.30.0.4
+
+  target-shm:
+    build:
+      context: .
+      dockerfile: Dockerfile.target-full
+    container_name: sf-target-shm
+    hostname: target-shm
+    stdin_open: true
+    tty: true
+    tmpfs:
+      - /dev/shm:rw,nosuid,nodev,exec,size=65536k
+    networks:
+      dmz:
+        ipv4_address: 10.30.0.5
+
+networks:
+  dmz:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.30.0.0/24

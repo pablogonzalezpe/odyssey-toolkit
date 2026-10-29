@@ -45,75 +45,43 @@ static void print_usage(const char *prog) {
             "      [--log-format text|json] [--verbose]\n"
             "  %s reverse-server --listen-control IP:PORT --token-file PATH\n"
             "      [--bind LHOST:LPORT:RHOST:RPORT]... [--max-streams N]\n"
-            "      [--socks-listen HOST:PORT]\n"
-            "      [--socks-user USER --socks-pass-file PATH]\n"
+            "      [--socks-listen HOST:PORT] [--socks-user USER --socks-pass-file PATH]\n"
             "      [--admin-listen HOST:PORT --admin-token-file PATH]\n"
-            "      [--control-admin enabled|disabled]\n"
-            "      [--control-admin-token-file PATH] [--control-admin-max-binds N]\n"
-            "      [--control-admin-require-token enabled|disabled]\n"
-            "      [--control-admin-rate-limit-per-min N]\n"
             "      [--allow-source IP|CIDR]... [--rate-limit-per-min N]\n"
-            "      [--knock-seq P1,P2,...] [--knock-timeout-ms N] [--knock-open-ms N]\n"
             "      [--tls-mode required|disabled] [--tls-cert PATH] [--tls-key PATH]\n"
-            "      [--tls-ca PATH] [--require-mtls]\n"
             "      [--heartbeat-ms N] [--heartbeat-timeout-ms N]\n"
             "      [--log-format text|json] [--verbose]\n"
             "  %s gateway --listen-control IP:PORT --token-file PATH\n"
-            "      --tun-name NAME --tun-cidr CIDR --route-allow CIDR [--route-allow CIDR]...\n"
-            "      [--gateway-mtu N]\n"
+            "      --tun-name NAME --tun-cidr CIDR --route-allow CIDR\n"
             "      [--admin-listen HOST:PORT --admin-token-file PATH]\n"
-            "      [--control-admin enabled|disabled]\n"
-            "      [--control-admin-token-file PATH] [--control-admin-require-token enabled|disabled]\n"
-            "      [--control-admin-rate-limit-per-min N]\n"
-            "      [--tls-mode required|disabled] [--tls-cert PATH] [--tls-key PATH] [--tls-ca PATH]\n"
-            "      [--heartbeat-ms N] [--heartbeat-timeout-ms N]\n"
+            "      [--tls-mode required|disabled] [--tls-cert PATH] [--tls-key PATH]\n"
             "      [--log-format text|json] [--verbose]\n"
             "  %s reverse-client --connect IP:PORT --token-file PATH\n"
-            "      [--mode reverse|tun-agent]\n"
-            "      [--allow-cidr CIDR]... [--allow-port tcp:PORT|udp:PORT]... [--agent-name NAME]\n"
-            "      [--agent-tun-cidr CIDR]\n"
-            "      [--allow-target HOST:PORT]... [--max-streams N]\n"
+            "      [--mode reverse|tun-agent] [--allow-target HOST:PORT]...\n"
             "      [--knock-before-connect] [--knock-host HOST] [--knock-seq P1,P2,...]\n"
-            "      [--knock-delay-ms N] [--knock-timeout-ms N]\n"
-            "      [--ctl-list-bind] [--ctl-add-bind SPEC]... [--ctl-del-bind ID]...\n"
-            "      [--ctl-capabilities] [--ctl-status]\n"
-            "      [--ctl-list-stream] [--ctl-close-stream ID]...\n"
-            "      [--ctl-route-list] [--ctl-route-add CIDR]... [--ctl-route-del CIDR]...\n"
-            "      [--ctl-policy-show]\n"
-            "      [--ctl-policy-allow-cidr-add CIDR]... [--ctl-policy-allow-cidr-del CIDR]...\n"
-            "      [--ctl-policy-allow-port-add tcp:PORT|udp:PORT]... [--ctl-policy-allow-port-del tcp:PORT|udp:PORT]...\n"
-            "      [--ctl-killswitch on|off] [--ctl-snapshot]\n"
-            "      [--ctl-exit-after-admin]\n"
-            "      [--ctl-token-file PATH]\n"
             "      [--tls-mode required|disabled] [--tls-ca PATH]\n"
-            "      [--tls-server-name NAME] [--tls-cert PATH] [--tls-key PATH]\n"
-            "      [--connect-timeout-ms N] [--heartbeat-timeout-ms N]\n"
-            "      [--log-format text|json] [--verbose]\n\n"
+            "      [--log-format text|json] [--verbose]\n",
+            prog, prog, prog, prog);
+    fprintf(stderr,
             "  %s knock --host HOST --seq P1,P2,...\n"
-            "      [--delay-ms N] [--timeout-ms N] [--log-format text|json] [--verbose]\n\n"
+            "      [--delay-ms N] [--timeout-ms N] [--verbose]\n"
             "  %s admin --connect IP:PORT [--token-file PATH] CMD\n"
-            "      CMD: list-bind | add-bind LHOST:LPORT:RHOST:RPORT | del-bind BIND_ID |\n"
-            "           capabilities | status | list-stream | close-stream STREAM_ID |\n"
-            "           route-list | route-add CIDR | route-del CIDR |\n"
-            "           policy-show |\n"
-            "           policy-allow-cidr-add CIDR | policy-allow-cidr-del CIDR |\n"
-            "           policy-allow-port-add tcp:PORT|udp:PORT | policy-allow-port-del tcp:PORT|udp:PORT |\n"
-            "           killswitch on|off | snapshot\n\n"
+            "      CMD: list-bind | add-bind SPEC | del-bind ID | capabilities | status |\n"
+            "           list-stream | close-stream ID | route-list | route-add CIDR |\n"
+            "           killswitch on|off | snapshot\n"
             "  %s stager-server --listen IP:PORT --binary PATH\n"
-            "      [--token TOKEN] [--args ARGS] [--no-auth] [--single-use]\n"
-            "      [--log-format text|json] [--verbose]\n"
-            "  %s stager --os linux|windows --format oneliner --connect IP:PORT\n"
-            "      [--run-args ARGS]\n"
-            "  %s stager --os linux|windows --format base64 --connect IP:PORT --token TOKEN\n\n"
+            "      [--token TOKEN] [--args ARGS] [--no-auth] [--single-use] [--verbose]\n"
+            "  %s stager --format list [--os linux|windows]\n"
+            "  %s stager --connect IP:PORT --os linux|windows --format oneliner [--run-args ARGS]\n"
+            "  %s stager --connect IP:PORT --os linux --format base64 --token TOKEN [--run-args ARGS]\n"
+            "  %s stager --connect IP:PORT --os linux --format stub|stub-shm|stub-memfd|perl-memfd [--run-args ARGS]\n"
             "  %s --version\n\n"
             "Notes:\n"
-            "  - IPv4/hostname only in this MVP endpoint format.\n"
-            "  - Default connect timeout: %d ms.\n"
-            "  - Default heartbeat: %d ms (timeout %d ms).\n"
-            "  - Default max streams: %d.\n"
-            "  - Default reverse TLS mode: required.\n\n"
+            "  - Default connect timeout: %d ms. Default heartbeat: %d ms (timeout %d ms).\n"
+            "  - Default max streams: %d. Default TLS mode: required.\n\n"
             "Odyssey %s — https://github.com/pablogonzalezpe/odyssey\n",
-            prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_HEARTBEAT_MS,
+            prog, prog, prog, prog, prog, prog, prog, prog,
+            DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_HEARTBEAT_MS,
             DEFAULT_HEARTBEAT_TIMEOUT_MS, DEFAULT_MAX_STREAMS, ODYSSEY_VERSION);
 }
 
@@ -2557,6 +2525,10 @@ static int run_stager_server_cmd(int argc, char **argv) {
         fprintf(stderr, "--token required (or use --no-auth)\n");
         return 1;
     }
+    if (no_auth && have_token) {
+        fprintf(stderr, "--no-auth and --token are mutually exclusive\n");
+        return 1;
+    }
 
     od_log_set_format(log_format);
     return od_run_stager_server(&listen_ep, binary_path,
@@ -2611,8 +2583,13 @@ static int run_stager_cmd(int argc, char **argv) {
         }
         if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
             if (strcmp(argv[i + 1], "oneliner") != 0 &&
-                strcmp(argv[i + 1], "base64") != 0) {
-                fprintf(stderr, "--format must be 'oneliner' or 'base64'\n");
+                strcmp(argv[i + 1], "base64") != 0 &&
+                strcmp(argv[i + 1], "stub") != 0 &&
+                strcmp(argv[i + 1], "stub-shm") != 0 &&
+                strcmp(argv[i + 1], "stub-memfd") != 0 &&
+                strcmp(argv[i + 1], "perl-memfd") != 0 &&
+                strcmp(argv[i + 1], "list") != 0) {
+                fprintf(stderr, "--format must be one of: oneliner, base64, stub, stub-shm, stub-memfd, perl-memfd, list\n");
                 return 1;
             }
             snprintf(format, sizeof(format), "%s", argv[i + 1]);
@@ -2629,8 +2606,17 @@ static int run_stager_cmd(int argc, char **argv) {
         return 1;
     }
 
-    if (!have_os || !have_format) {
-        fprintf(stderr, "stager requires --os and --format\n");
+    if (!have_format) {
+        fprintf(stderr, "stager requires --format\n");
+        return 1;
+    }
+    if (strcmp(format, "list") == 0) {
+        return od_run_stager_generate(NULL, 0, NULL,
+                                      have_os ? os_name : NULL,
+                                      "list", NULL);
+    }
+    if (!have_os) {
+        fprintf(stderr, "stager requires --os (except --format list)\n");
         return 1;
     }
     if (!have_connect) {

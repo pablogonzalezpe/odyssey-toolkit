@@ -1,36 +1,33 @@
-# Build artifacts
-bin/
-build/
-*.o
-*.d
-*.exe
+# Ignore everything by default (whitelist mode)
+*
 
-# IDE / editor
-.vscode/
-.idea/
-*.swp
-*~
+# ── Tracked directories (explicitly allowed) ────────────────────
+!src/
+!src/**
+!include/
+!include/**
+!tests/
+!tests/**
+!docker/
+!docker/**
+!examples/
+!examples/**
+!scripts/
+!scripts/**
+!stager_payload/
+!stager_payload/stager_linux.c
+!stager_payload/stager_linux_x64
+!stager_payload/stub_linux.asm
+!stager_payload/stub_linux_x64_elf
 
-# OS metadata
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Slides (generated)
-slides/
-
-# Local-only directories (distributed via release archive)
-lab/
-docs/
-portable/
-manual/
-
-# Secrets & crypto material
-secrets/
-*.pem
-*.key
-*.crt
-
-# Temporary files
-tmp/
-*.tmp
+# ── Tracked root files ──────────────────────────────────────────
+!Makefile
+!README.md
+!CHANGELOG.md
+!LICENSE
+!CONTRIBUTING.md
+!SECURITY.md
+!.gitignore
+!.gitattributes
+!.github/
+!.github/**
