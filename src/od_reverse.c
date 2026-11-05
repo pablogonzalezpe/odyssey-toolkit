@@ -20,6 +20,7 @@
 #include "od_socket.h"
 #include "od_tls.h"
 #include "od_tun_dev.h"
+#include "od_ws.h"
 
 #define DEFAULT_POLL_MS 250
 #define FORWARD_BUF_SIZE 8192
@@ -3219,7 +3220,7 @@ int od_run_reverse_server(const endpoint_t *control_listen_ep, const od_bind_rul
                           const od_hardening_options_t *hardening_opts,
                           const od_admin_server_opts_t *admin_opts,
                           const od_control_admin_policy_t *control_admin_policy,
-                          const od_tls_options_t *tls_opts,
+                          const od_tls_options_t *tls_opts, const char *ws_path,
                           int heartbeat_ms, int heartbeat_timeout_ms, bool verbose) {
     socket_t lfd = OD_SOCK_INVALID;
     socket_t cfd = OD_SOCK_INVALID;
@@ -3281,6 +3282,8 @@ int od_run_reverse_server(const endpoint_t *control_listen_ep, const od_bind_rul
         hb_state_t hb;
         od_io_t ctrl_io;
         od_socket_io_ctx_t sock_io;
+        od_ws_ctx_t ws_ctx;
+        od_io_t ws_underlying;
         od_tls_state_t *tls_state = NULL;
         char tls_err[256];
         bool control_ready = false;
@@ -3288,6 +3291,8 @@ int od_run_reverse_server(const endpoint_t *control_listen_ep, const od_bind_rul
 
         memset(&ctrl_io, 0, sizeof(ctrl_io));
         memset(&sock_io, 0, sizeof(sock_io));
+        memset(&ws_ctx, 0, sizeof(ws_ctx));
+        memset(&ws_underlying, 0, sizeof(ws_underlying));
         memset(tls_err, 0, sizeof(tls_err));
         cfd = OD_SOCK_INVALID;
 
@@ -3397,6 +3402,19 @@ int od_run_reverse_server(const endpoint_t *control_listen_ep, const od_bind_rul
         } else {
             od_io_init_socket(&ctrl_io, &sock_io, cfd);
             control_ready = true;
+        }
+
+        if (control_ready && ws_path != NULL) {
+            char ws_err[256];
+            memset(ws_err, 0, sizeof(ws_err));
+            if (od_ws_handshake_server(&ctrl_io, ws_path, ws_err, sizeof(ws_err)) != 0) {
+                od_log_warn("WS handshake failed: %s", ws_err);
+                control_ready = false;
+            } else {
+                ws_underlying = ctrl_io;
+                od_ws_init_io(&ctrl_io, &ws_ctx, &ws_underlying, true);
+                od_log_info("WebSocket upgrade completed (server)");
+            }
         }
 
         if (control_ready && do_server_handshake(&ctrl_io, token) == 0) {
@@ -4067,7 +4085,7 @@ void od_reverse_clear_tun_gateway_ctx(void) {
 int od_run_tun_agent(const endpoint_t *connect_ep, const char *token,
                      const od_tun_agent_runtime_opts_t *tun_opts,
                      int connect_timeout_ms, const od_knock_plan_t *knock_plan,
-                     const od_tls_options_t *tls_opts,
+                     const od_tls_options_t *tls_opts, const char *ws_path,
                      int heartbeat_timeout_ms, bool verbose) {
     int heartbeat_ms = heartbeat_timeout_ms / 3;
     int backoff_ms = 1000;
@@ -4107,12 +4125,16 @@ int od_run_tun_agent(const endpoint_t *connect_ep, const char *token,
         od_io_t ctrl_io;
         od_socket_io_ctx_t sock_io;
         od_tls_state_t *tls_state = NULL;
+        od_ws_ctx_t ws_ctx;
+        od_io_t ws_underlying;
         char tls_err[256];
         bool control_ready = false;
         int wait_ms = 1000;
 
         memset(&ctrl_io, 0, sizeof(ctrl_io));
         memset(&sock_io, 0, sizeof(sock_io));
+        memset(&ws_ctx, 0, sizeof(ws_ctx));
+        memset(&ws_underlying, 0, sizeof(ws_underlying));
         memset(tls_err, 0, sizeof(tls_err));
 
         if (cfd == OD_SOCK_INVALID) {
@@ -4145,6 +4167,20 @@ int od_run_tun_agent(const endpoint_t *connect_ep, const char *token,
             control_ready = true;
         }
 
+        if (control_ready && ws_path != NULL) {
+            char ws_err[256];
+            memset(ws_err, 0, sizeof(ws_err));
+            if (od_ws_handshake_client(&ctrl_io, connect_ep->host, connect_ep->port,
+                                       ws_path, ws_err, sizeof(ws_err)) != 0) {
+                od_log_warn("WS handshake failed: %s", ws_err);
+                control_ready = false;
+            } else {
+                ws_underlying = ctrl_io;
+                od_ws_init_io(&ctrl_io, &ws_ctx, &ws_underlying, false);
+                od_log_info("WebSocket upgrade completed (tun-agent)");
+            }
+        }
+
         if (control_ready && do_client_handshake(&ctrl_io, token) == 0) {
             hb_init(&hb, heartbeat_ms, heartbeat_timeout_ms, verbose);
             (void)run_tun_agent_control_loop(cfd, &ctrl_io, &hb, tun_opts);
@@ -4168,10 +4204,10 @@ int od_run_tun_agent(const endpoint_t *connect_ep, const char *token,
 int od_run_tun_agent(const endpoint_t *connect_ep, const char *token,
                      const od_tun_agent_runtime_opts_t *tun_opts,
                      int connect_timeout_ms, const od_knock_plan_t *knock_plan,
-                     const od_tls_options_t *tls_opts,
+                     const od_tls_options_t *tls_opts, const char *ws_path,
                      int heartbeat_timeout_ms, bool verbose) {
     (void)connect_ep; (void)token; (void)tun_opts; (void)connect_timeout_ms;
-    (void)knock_plan; (void)tls_opts; (void)heartbeat_timeout_ms; (void)verbose;
+    (void)knock_plan; (void)tls_opts; (void)ws_path; (void)heartbeat_timeout_ms; (void)verbose;
     od_log_error("tun-agent mode is not supported on Windows");
     return -1;
 }
@@ -4182,7 +4218,7 @@ int od_run_reverse_client(const endpoint_t *connect_ep, const endpoint_t *allow_
                           const char *token, int connect_timeout_ms,
                           const od_knock_plan_t *knock_plan,
                           const od_ctrl_client_opts_t *ctrl_opts,
-                          const od_tls_options_t *tls_opts,
+                          const od_tls_options_t *tls_opts, const char *ws_path,
                           int heartbeat_timeout_ms, bool verbose) {
     int heartbeat_ms = heartbeat_timeout_ms / 3;
     int backoff_ms = 1000;
@@ -4223,12 +4259,16 @@ int od_run_reverse_client(const endpoint_t *connect_ep, const endpoint_t *allow_
         od_io_t ctrl_io;
         od_socket_io_ctx_t sock_io;
         od_tls_state_t *tls_state = NULL;
+        od_ws_ctx_t ws_ctx;
+        od_io_t ws_underlying;
         char tls_err[256];
         int wait_ms = 1000;
         bool control_ready = false;
 
         memset(&ctrl_io, 0, sizeof(ctrl_io));
         memset(&sock_io, 0, sizeof(sock_io));
+        memset(&ws_ctx, 0, sizeof(ws_ctx));
+        memset(&ws_underlying, 0, sizeof(ws_underlying));
         memset(tls_err, 0, sizeof(tls_err));
 
         if (cfd == OD_SOCK_INVALID) {
@@ -4259,6 +4299,20 @@ int od_run_reverse_client(const endpoint_t *connect_ep, const endpoint_t *allow_
         } else {
             od_io_init_socket(&ctrl_io, &sock_io, cfd);
             control_ready = true;
+        }
+
+        if (control_ready && ws_path != NULL) {
+            char ws_err[256];
+            memset(ws_err, 0, sizeof(ws_err));
+            if (od_ws_handshake_client(&ctrl_io, connect_ep->host, connect_ep->port,
+                                       ws_path, ws_err, sizeof(ws_err)) != 0) {
+                od_log_warn("WS handshake failed: %s", ws_err);
+                control_ready = false;
+            } else {
+                ws_underlying = ctrl_io;
+                od_ws_init_io(&ctrl_io, &ws_ctx, &ws_underlying, false);
+                od_log_info("WebSocket upgrade completed (client)");
+            }
         }
 
         if (control_ready && do_client_handshake(&ctrl_io, token) == 0) {

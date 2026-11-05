@@ -48,6 +48,7 @@ static void print_usage(const char *prog) {
             "      [--socks-listen HOST:PORT] [--socks-user USER --socks-pass-file PATH]\n"
             "      [--admin-listen HOST:PORT --admin-token-file PATH]\n"
             "      [--allow-source IP|CIDR]... [--rate-limit-per-min N]\n"
+            "      [--transport raw|ws] [--ws-path PATH]\n"
             "      [--tls-mode required|disabled] [--tls-cert PATH] [--tls-key PATH]\n"
             "      [--heartbeat-ms N] [--heartbeat-timeout-ms N]\n"
             "      [--log-format text|json] [--verbose]\n"
@@ -59,6 +60,7 @@ static void print_usage(const char *prog) {
             "  %s reverse-client --connect IP:PORT --token-file PATH\n"
             "      [--mode reverse|tun-agent] [--allow-target HOST:PORT]...\n"
             "      [--knock-before-connect] [--knock-host HOST] [--knock-seq P1,P2,...]\n"
+            "      [--transport raw|ws] [--ws-path PATH]\n"
             "      [--tls-mode required|disabled] [--tls-ca PATH]\n"
             "      [--log-format text|json] [--verbose]\n",
             prog, prog, prog, prog);
@@ -1156,6 +1158,8 @@ static int run_reverse_server_cmd(int argc, char **argv) {
     char *control_admin_token = NULL;
     char token_policy_reason[160];
     char socks_cred_reason[160];
+    const char *ws_path = NULL;
+    char ws_path_buf[256];
     int i = 0;
     int rc = 1;
 
@@ -1169,6 +1173,7 @@ static int run_reverse_server_cmd(int argc, char **argv) {
     cli_hardening_init(&hard_cli);
     memset(token_path, 0, sizeof(token_path));
     memset(socks_user, 0, sizeof(socks_user));
+    memset(ws_path_buf, 0, sizeof(ws_path_buf));
     memset(socks_pass_path, 0, sizeof(socks_pass_path));
     memset(tls_cert_path, 0, sizeof(tls_cert_path));
     memset(tls_key_path, 0, sizeof(tls_key_path));
@@ -1379,6 +1384,27 @@ static int run_reverse_server_cmd(int argc, char **argv) {
             tls_opts.require_mtls = true;
             continue;
         }
+        if (strcmp(argv[i], "--transport") == 0 && i + 1 < argc) {
+            if (strcmp(argv[i + 1], "ws") == 0) {
+                if (ws_path == NULL) {
+                    snprintf(ws_path_buf, sizeof(ws_path_buf), "/odyssey");
+                    ws_path = ws_path_buf;
+                }
+            } else if (strcmp(argv[i + 1], "raw") == 0) {
+                ws_path = NULL;
+            } else {
+                fprintf(stderr, "Invalid --transport value: %s (expected raw|ws)\n", argv[i + 1]);
+                goto cleanup;
+            }
+            i++;
+            continue;
+        }
+        if (strcmp(argv[i], "--ws-path") == 0 && i + 1 < argc) {
+            snprintf(ws_path_buf, sizeof(ws_path_buf), "%s", argv[i + 1]);
+            ws_path = ws_path_buf;
+            i++;
+            continue;
+        }
         if (strcmp(argv[i], "--max-streams") == 0 && i + 1 < argc) {
             int v = 0;
             if (parse_u32_arg(argv[i + 1], 1, 4096, &v) != 0) {
@@ -1535,7 +1561,7 @@ static int run_reverse_server_cmd(int argc, char **argv) {
                                &hard_opts,
                                admin_opts.listen_ep != NULL ? &admin_opts : NULL,
                                &control_admin_policy,
-                               &tls_opts,
+                               &tls_opts, ws_path,
                                heartbeat_ms, heartbeat_timeout_ms, verbose);
 
 cleanup:
@@ -1926,6 +1952,8 @@ static int run_reverse_client_cmd(int argc, char **argv) {
     char *token = NULL;
     char *ctl_token = NULL;
     char token_policy_reason[160];
+    const char *ws_path = NULL;
+    char ws_path_buf[256];
     int i = 0;
     int rc = 1;
 
@@ -1949,6 +1977,7 @@ static int run_reverse_client_cmd(int argc, char **argv) {
     memset(agent_tun_cidr, 0, sizeof(agent_tun_cidr));
     memset(&tls_opts, 0, sizeof(tls_opts));
     memset(token_policy_reason, 0, sizeof(token_policy_reason));
+    memset(ws_path_buf, 0, sizeof(ws_path_buf));
     tls_opts.mode = OD_TLS_MODE_REQUIRED;
     tls_opts.require_mtls = false;
 
@@ -2271,6 +2300,27 @@ static int run_reverse_client_cmd(int argc, char **argv) {
             i++;
             continue;
         }
+        if (strcmp(argv[i], "--transport") == 0 && i + 1 < argc) {
+            if (strcmp(argv[i + 1], "ws") == 0) {
+                if (ws_path == NULL) {
+                    snprintf(ws_path_buf, sizeof(ws_path_buf), "/odyssey");
+                    ws_path = ws_path_buf;
+                }
+            } else if (strcmp(argv[i + 1], "raw") == 0) {
+                ws_path = NULL;
+            } else {
+                fprintf(stderr, "Invalid --transport value: %s (expected raw|ws)\n", argv[i + 1]);
+                goto cleanup;
+            }
+            i++;
+            continue;
+        }
+        if (strcmp(argv[i], "--ws-path") == 0 && i + 1 < argc) {
+            snprintf(ws_path_buf, sizeof(ws_path_buf), "%s", argv[i + 1]);
+            ws_path = ws_path_buf;
+            i++;
+            continue;
+        }
         if (strcmp(argv[i], "--max-streams") == 0 && i + 1 < argc) {
             int v = 0;
             if (parse_u32_arg(argv[i + 1], 1, 4096, &v) != 0) {
@@ -2420,7 +2470,7 @@ static int run_reverse_client_cmd(int argc, char **argv) {
         }
         rc = od_run_tun_agent(&connect_ep, token, &tun_runtime_opts,
                               connect_timeout_ms, knock_plan_ptr,
-                              &tls_opts, heartbeat_timeout_ms, verbose);
+                              &tls_opts, ws_path, heartbeat_timeout_ms, verbose);
         goto cleanup;
     }
 
@@ -2444,7 +2494,7 @@ static int run_reverse_client_cmd(int argc, char **argv) {
 
     rc = od_run_reverse_client(&connect_ep, allow_targets, allow_count, max_streams, token,
                                connect_timeout_ms, knock_plan_ptr, ctrl_opts_ptr, &tls_opts,
-                               heartbeat_timeout_ms, verbose);
+                               ws_path, heartbeat_timeout_ms, verbose);
 
 cleanup:
     free(ctrl_actions);

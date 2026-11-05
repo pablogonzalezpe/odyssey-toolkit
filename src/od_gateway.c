@@ -77,7 +77,7 @@ int od_run_gateway(const od_gateway_run_opts_t *opts) {
                                &opts->hardening_opts,
                                admin_opts_ptr,
                                &policy,
-                               &opts->tls_opts,
+                               &opts->tls_opts, NULL,
                                opts->heartbeat_ms,
                                opts->heartbeat_timeout_ms,
                                opts->verbose);

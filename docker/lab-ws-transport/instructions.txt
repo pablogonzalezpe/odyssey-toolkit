@@ -1,0 +1,31 @@
+Odyssey WebSocket Transport Lab
+================================
+
+Network layout:
+
+  pentester (10.10.10.3)  ---[pentest-net]---  jumpbox (10.10.10.2)  ---[internal-net]---  destiny (10.10.20.2)
+
+Roles:
+
+  pentester  runs reverse-server with --transport ws (control channel over WebSocket)
+  jumpbox    runs reverse-client with --transport ws (connects back over WebSocket)
+  destiny    HTTP server on port 8080 (only reachable from internal-net)
+
+The control channel between pentester and jumpbox uses WebSocket binary
+frames (RFC 6455) instead of raw TCP. The tunnel multiplexing, binds and
+data streams work identically to the plain reverse lab.
+
+Try it:
+
+  curl http://127.0.0.1:8080/flag.txt
+
+Expected output:
+
+  FLAG{odyssey_ws_transport_works}
+
+Key difference from the reverse lab:
+
+  The control channel is wrapped in WebSocket frames. Both sides negotiate
+  an HTTP/1.1 Upgrade handshake before starting the Odyssey protocol.
+  This is the foundation for traversing HTTP proxies and blending in with
+  normal web traffic.

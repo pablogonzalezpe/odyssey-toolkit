@@ -82,19 +82,19 @@ int od_run_reverse_server(const endpoint_t *control_listen_ep, const od_bind_rul
                           const od_hardening_options_t *hardening_opts,
                           const od_admin_server_opts_t *admin_opts,
                           const od_control_admin_policy_t *control_admin_policy,
-                          const od_tls_options_t *tls_opts,
+                          const od_tls_options_t *tls_opts, const char *ws_path,
                           int heartbeat_ms, int heartbeat_timeout_ms, bool verbose);
 int od_run_reverse_client(const endpoint_t *connect_ep, const endpoint_t *allow_targets,
                           size_t allow_target_count, size_t max_streams,
                           const char *token, int connect_timeout_ms,
                           const od_knock_plan_t *knock_plan,
                           const od_ctrl_client_opts_t *ctrl_opts,
-                          const od_tls_options_t *tls_opts,
+                          const od_tls_options_t *tls_opts, const char *ws_path,
                           int heartbeat_timeout_ms, bool verbose);
 int od_run_tun_agent(const endpoint_t *connect_ep, const char *token,
                      const od_tun_agent_runtime_opts_t *tun_opts,
                      int connect_timeout_ms, const od_knock_plan_t *knock_plan,
-                     const od_tls_options_t *tls_opts,
+                     const od_tls_options_t *tls_opts, const char *ws_path,
                      int heartbeat_timeout_ms, bool verbose);
 void od_reverse_set_tun_gateway_ctx(int tun_fd, const char *const *route_allow,
                                     size_t route_allow_count);

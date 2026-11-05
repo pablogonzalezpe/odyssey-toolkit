@@ -1,0 +1,43 @@
+Odyssey SOCKS5 Lab
+==================
+
+Network layout:
+
+  pentester (10.10.10.3)  ---[pentest-net]---  jumpbox (10.10.10.2)  ---[internal-net]---  destiny (10.10.20.2)
+
+Roles:
+
+  pentester  runs reverse-server with --socks-listen (SOCKS5 proxy on 127.0.0.1:1080)
+  jumpbox    runs reverse-client (connects back to pentester on port 9001)
+  destiny    HTTP server on port 8080 (only reachable from internal-net)
+
+The jumpbox initiates the control channel outbound to the pentester.
+The pentester exposes a SOCKS5 proxy on localhost:1080 that routes
+traffic through the reverse tunnel to the jumpbox, which forwards
+it to the final destination on internal-net.
+
+Unlike the relay lab (fixed --bind rule), SOCKS5 is a dynamic proxy:
+any host reachable from the jumpbox can be accessed through it without
+reconfiguring the tunnel.
+
+Try it (from pentester):
+
+  1. Direct SOCKS5 with curl:
+
+     curl --socks5 127.0.0.1:1080 http://10.10.20.2:8080/flag.txt
+
+  2. Using proxychains (any tool through the tunnel):
+
+     proxychains -q curl http://10.10.20.2:8080/flag.txt
+     proxychains -q nmap -sT -p 8080 10.10.20.2
+
+Expected output (curl):
+
+  FLAG{odyssey_socks5_works}
+
+proxychains is pre-configured to use the SOCKS5 proxy at 127.0.0.1:1080.
+Any tool wrapped with proxychains will route its traffic through the
+reverse tunnel without needing native SOCKS support.
+
+You can reach any host on internal-net (10.10.20.0/24) through the
+same SOCKS5 proxy without adding new bind rules.

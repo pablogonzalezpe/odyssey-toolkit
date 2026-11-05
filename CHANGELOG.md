@@ -80,7 +80,12 @@ First public release. Single-binary C pivoting toolkit with six operating modes.
 - Docker Compose relay lab (`docker/lab-relay`) with three Alpine containers and two isolated networks
 - Docker Compose reverse tunnel lab (`docker/lab-reverse`) demonstrating outbound control channel from jumpbox to pentester
 
+## [0.3.1] - 2026-10-30
+
+### Docker labs
+- SOCKS5 lab (`docker/lab-socks5`) with pentester/jumpbox/destiny topology demonstrating dynamic SOCKS5 proxy through the reverse tunnel (no fixed bind rules)
+- Reverse tunnel with TLS lab (`docker/lab-reverse-tls`) with self-signed certificate generated at runtime and shared via Docker volume, demonstrating encrypted control channel
+
 ## Next
 
-- Docker Compose lab for SOCKS5 mode
-- Docker Compose lab for reverse tunnel with TLS
+- (roadmap empty)

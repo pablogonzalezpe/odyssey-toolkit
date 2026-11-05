@@ -1,0 +1,40 @@
+Odyssey Reverse Tunnel + TLS Lab
+=================================
+
+Network layout:
+
+  pentester (10.10.10.3)  ---[pentest-net]---  jumpbox (10.10.10.2)  ---[internal-net]---  destiny (10.10.20.2)
+
+Roles:
+
+  pentester  runs reverse-server with TLS (self-signed cert generated at startup)
+  jumpbox    runs reverse-client with --tls-ca trusting the pentester cert
+  destiny    HTTP server on port 8080 (only reachable from internal-net)
+
+The control channel between pentester and jumpbox is encrypted with TLS.
+A self-signed certificate is generated at runtime by the pentester and
+shared with jumpbox via a Docker volume.
+
+The jumpbox initiates the control channel outbound to the pentester.
+The pentester never opens a connection to the jumpbox data port.
+The bind rule on the server maps 127.0.0.1:8080 to 10.10.20.2:8080
+through the tunnel.
+
+Start the lab:
+
+  docker compose up --build
+
+Try it (from inside pentester):
+
+  curl http://127.0.0.1:8080/flag.txt
+
+Expected output:
+
+  FLAG{odyssey_reverse_tls_works}
+
+Key difference from lab-reverse:
+
+  In lab-reverse, the control channel is unencrypted (--tls-mode disabled).
+  Here, the server presents a TLS certificate and the client verifies it
+  via --tls-ca. An attacker sniffing the pentest-net sees only encrypted
+  traffic between pentester and jumpbox.
